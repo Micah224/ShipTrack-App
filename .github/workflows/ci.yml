@@ -2,14 +2,13 @@ name: ci
 
 # Quality gates only. Deployment is NOT here on purpose.
 #
-# The `cloudflare-workers-and-pages` GitHub App is installed on this repository,
-# so Cloudflare Workers Builds already builds and deploys on push. A second
-# deploy from Actions would race it: two builds of the same commit publishing to
-# the same Worker, with the winner decided by whichever finishes last. So
-# Cloudflare owns CD, Actions owns CI, and neither duplicates the other.
+# The Vercel GitHub App is installed on this repository and builds every push,
+# so a deploy from Actions would race it: two builds of the same commit
+# publishing to the same project, with the winner decided by whichever finishes
+# last. So Vercel owns CD, Actions owns CI, and neither duplicates the other.
 #
 # Deliberately NOT triggered on push to main: a merge into main carries a tree
-# that already passed as a PR, and Cloudflare rebuilds it anyway. Skipping that
+# that already passed as a PR, and Vercel rebuilds it anyway. Skipping that
 # saves a full duplicate run per merge, which matters on a private repo where
 # Actions minutes are metered.
 on:
@@ -52,24 +51,24 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      # eslint-config-next 16 ships native flat configs; `next lint` was removed
-      # in Next 16 and silently treats "lint" as a directory argument, which is
-      # how this script came to be broken before CI existed to catch it.
+      # Flat config (eslint.config.mjs), typescript-eslint plus
+      # eslint-plugin-svelte.
       - name: ESLint
         run: npm run lint
 
       - name: TypeScript
         run: npm run typecheck
 
-      # --passWithNoTests until Project A lands the first suites. This is an
-      # honest green rather than a job that does not exist: the runner is wired,
-      # so adding a test file is all that is needed for it to start gating.
+      # Vitest. --passWithNoTests is kept in the script so a package with no
+      # suites is not a failure, but this now gates real tests.
       - name: Unit tests
         run: npm run test
 
-  # Proves the tree actually builds. Runs WITHOUT .env.local, which CI does not
-  # have — so this also catches any build-time dependency on a secret, which
-  # would otherwise only surface in Cloudflare's build and be harder to attribute.
+  # Proves the tree actually builds. Runs with no environment file, which CI
+  # does not have — so this also catches any build-time dependency on a secret,
+  # which would otherwise only surface in Vercel's build and be harder to
+  # attribute. Nothing here should need one: secrets are read at request time
+  # through src/lib/server/env.ts, never at build time.
   build:
     name: build
     runs-on: ubuntu-latest
@@ -84,17 +83,8 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      - name: next build
+      # `vite build` runs @sveltejs/adapter-vercel, which emits the deployable
+      # .vercel/output/ artifact as part of the same command. There is no
+      # separate bundling step to run, unlike the OpenNext setup this replaced.
+      - name: Build
         run: npm run build
-
-      # Build the actual deployable artifact, not just the Next output.
-      # `next build` produces .next/; Cloudflare deploys .open-next/worker.js,
-      # and only opennextjs-cloudflare produces that. Without this step CI can be
-      # green while the deploy fails on a missing entry point — which is exactly
-      # what happened on the first Cloudflare build of this repo.
-      #
-      # Note the scripts must stay separate: opennextjs-cloudflare invokes
-      # `npm run build` internally to build the Next app, so pointing `build` at
-      # it instead of `next build` recurses infinitely.
-      - name: worker bundle
-        run: npm run build:worker
