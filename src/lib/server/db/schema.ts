@@ -43,7 +43,10 @@ export const environmentEnum = pgEnum('activation_environment', [
 export const releaseReasonEnum = pgEnum('activation_release_reason', [
 	'SELF_SERVICE',
 	'AUTO_RECLAIM',
-	'ADMIN'
+	'ADMIN',
+	// Lost a concurrent race for the last seat and backed itself out. See
+	// claimSeat in domain/seats.ts for why that is a real state and not a bug.
+	'SUPERSEDED'
 ]);
 
 export const customers = pgTable('customers', {
@@ -85,7 +88,16 @@ export const licenses = pgTable(
 		status: licenseStatusEnum('status').default('ACTIVE').notNull(),
 		expiresAt: timestamp('expires_at', { withTimezone: true }),
 		gracePeriodDays: integer('grace_period_days').default(7).notNull(),
-		features: jsonb('features').$type<string[]>().default(['truck', 'plane']).notNull(),
+		/*
+		 * Empty means "use the tier's matrix"; a non-empty array overrides it for
+		 * a bespoke deal. The default MUST stay empty: seeding it with concrete
+		 * features would silently override the tier on every row the mint CLI
+		 * writes, and every licence above STARTER would quietly grant Starter's
+		 * capabilities instead of the ones it was sold.
+		 */
+		features: jsonb('features').$type<string[]>().default([]).notNull(),
+		/* Same contract for the numeric caps. Null means "use the tier's". */
+		limits: jsonb('limits').$type<{ branches: number | null; auditRetentionDays: number | null }>(),
 		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 	},
@@ -123,6 +135,13 @@ export const activations = pgTable(
 		environment: environmentEnum('environment').default('PRODUCTION').notNull(),
 		countsSeat: boolean('counts_seat').default(true).notNull(),
 		lastHeartbeat: timestamp('last_heartbeat', { withTimezone: true }).defaultNow().notNull(),
+		/*
+		 * When this install last took a seat, which is NOT when the row was
+		 * created: a released install that re-activates takes a *new* seat and
+		 * must queue behind whoever took one in the meantime. Ordering by
+		 * created_at instead would let a long-dormant install evict a live one.
+		 */
+		seatClaimedAt: timestamp('seat_claimed_at', { withTimezone: true }).defaultNow().notNull(),
 		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 		releasedAt: timestamp('released_at', { withTimezone: true }),
 		releaseReason: releaseReasonEnum('release_reason')
@@ -131,25 +150,31 @@ export const activations = pgTable(
 		uniqueIndex('activation_install_unique').on(table.licenseId, table.installId),
 		index('activation_domain_idx').on(table.domain),
 		index('activation_seat_idx').on(table.licenseId, table.releasedAt, table.countsSeat),
+		index('activation_claim_idx').on(table.licenseId, table.seatClaimedAt),
 		index('activation_heartbeat_idx').on(table.lastHeartbeat)
 	]
 );
 
-export const releases = pgTable('releases', {
-	id: uuid('id').defaultRandom().primaryKey(),
-	tag: text('tag').notNull().unique(),
-	version: text('version').notNull().unique(),
-	minPhp: text('min_php').default('8.1').notNull(),
-	minWp: text('min_wp').default('6.5').notNull(),
-	testedUpTo: text('tested_up_to').default('7.0').notNull(),
-	changelog: text('changelog').notNull(),
-	changelogHtml: text('changelog_html'),
-	r2StorageKey: text('r2_storage_key').notNull(),
-	fileSize: integer('file_size').notNull(),
-	fileSha256: text('file_sha256').notNull(),
-	downloadCount: integer('download_count').default(0).notNull(),
-	publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull()
-});
+export const releases = pgTable(
+	'releases',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		tag: text('tag').notNull().unique(),
+		version: text('version').notNull().unique(),
+		minPhp: text('min_php').default('8.1').notNull(),
+		minWp: text('min_wp').default('6.5').notNull(),
+		testedUpTo: text('tested_up_to').default('7.0').notNull(),
+		changelog: text('changelog').notNull(),
+		changelogHtml: text('changelog_html'),
+		r2StorageKey: text('r2_storage_key').notNull(),
+		fileSize: integer('file_size').notNull(),
+		fileSha256: text('file_sha256').notNull(),
+		downloadCount: integer('download_count').default(0).notNull(),
+		publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull()
+	},
+	// Read on every heartbeat and every update check, always newest-first.
+	(table) => [index('release_published_idx').on(table.publishedAt)]
+);
 
 /*
  * Ephemeral single-use download tokens.

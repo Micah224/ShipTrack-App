@@ -122,6 +122,45 @@ into Vercel; the public key is a constant in the plugin. It is never fetched
 over the network, because a plugin that downloads the key it verifies against is
 verifying nothing.
 
+## 3.1 Enforcing the seat cap without transactions
+
+This is the hardest correctness problem in the codebase and two obvious answers
+are both wrong, so the reasoning is recorded rather than left in the diff.
+
+**Read the count, then insert.** Two concurrent activations both read the last
+free seat as available, and both take it.
+
+**Put the count in a `WHERE` guard on the insert and call it atomic.** It is
+not. Under `READ COMMITTED` the guard's subquery reads the snapshot taken when
+the statement started, and two inserts of *different* rows never block each
+other, so both guards still pass. This version was written, and the integration
+test caught it by failing on roughly one run in three — which is exactly how a
+seat-cap bug reaches production, since one green run looks like proof.
+
+**Lock the licence row.** The natural answer, and unavailable: `neon-http` has
+no multi-statement transaction to hold a lock across, and moving this one path
+to a WebSocket pool would give the request path a connection pool to exhaust —
+the thing the driver choice exists to avoid.
+
+**What is implemented.** Every claim writes its row, then asks Postgres where it
+ranks among the live seat-holders ordered by `seat_claimed_at`. Ranks beyond
+`max_seats` release themselves with `release_reason = 'SUPERSEDED'`. The
+ordering is total and every racer sees the same committed rows, so exactly the
+first `max_seats` survive under any interleaving — no lock, no retry loop, and
+no window in which the live count exceeds the cap. The count guard is kept on
+the insert as a fast path, rejecting the common uncontended over-claim without
+writing anything.
+
+`seat_claimed_at` is deliberately not `created_at`: a released install that
+re-activates is taking a *new* seat and must queue behind whoever took one
+meanwhile. Ordering by `created_at` would let a long-dormant install evict a
+live one. It is only advanced when the install was not already holding a seat,
+so an ordinary re-activation keeps its place.
+
+Verified by `seats.integration.test.ts` against a real Postgres branch: twelve
+concurrent claims against a one-seat licence yield exactly one winner, and
+against a three-seat licence exactly three, across repeated runs.
+
 ## 4. Seats and site classification
 
 `classifySite` reduces a URL to a host and sorts it into `PRODUCTION`,
@@ -193,6 +232,45 @@ The protection `$env/dynamic/private` offers is not lost: everything under
 `$lib/server/` is server-only by path, so importing it into client code is
 already a build error.
 
+## 8.1 Second round: what the code review changed
+
+A review after the first implementation found fifteen issues, all fixed on this
+branch. The ones that changed a decision rather than a line:
+
+- **The `features` column default disabled every tier.** It defaulted to
+  `['truck','plane']`, and `effectiveFeatures` prefers a non-empty column over
+  the tier matrix — so every minted licence, at any tier, granted exactly two
+  features. The default is now `[]`, meaning "derive from the tier". The tests
+  missed it because they only ever passed `features: []`, which no minted row
+  held; there is now a test for the value the database actually writes.
+- **Three seat-cap bypasses**, all the same mistake: deciding whether a seat is
+  needed somewhere other than where it is taken. Re-activating a released
+  install un-released it without a check; an install flipping from staging to
+  production started counting without one; and heartbeat rewrote `counts_seat`
+  from the caller's own `site_url`, so any install could relabel itself as
+  staging, leave the seat ledger, and keep a valid entitlement. Seat logic now
+  lives in one module, and heartbeat no longer touches `domain`, `environment`
+  or `counts_seat` at all — a site that moves re-activates, which re-checks the
+  cap.
+- **Stored XSS in the changelog.** `marked` does not escape raw HTML, and the
+  result is rendered in wp-admin on every licensed site. Output is now run
+  through an allowlist sanitiser before storage — before, not on the way out,
+  because a sanitiser that must be remembered at each read is one that
+  eventually is not.
+- **Unvalidated bodies.** A numeric `key` reached `String.prototype.trim` and
+  turned an unauthenticated request into a 500. Bodies are now typed-checked
+  into a 400.
+- **Two features that were declared but did not exist.** `SEAT_RECLAIM_DAYS`
+  was advertised in `.env.example` with no job reading it, and nothing ever
+  deleted `download_tokens`, so the table grew for the life of the product.
+  Both now run from a secret-protected daily cron.
+- **`limits` ignored per-licence overrides**, so a bespoke licence got its
+  custom features and its tier's caps — sold multi-branch, capped at one, with
+  nothing surfacing it.
+- **The reset script did not do what its own comment claimed**, dropping only
+  the legacy tables and not the ones the migration creates, so the retry it
+  promised died on `relation "audit_logs" already exists`.
+
 ## 9. Not in this change
 
 Phase 5 (Skeleton admin portal: dashboard, licence manager, seat inspector,
@@ -202,9 +280,6 @@ untouched by this branch.
 
 Also outstanding, and named so they are not forgotten:
 
-- **Seat auto-reclaim.** `SEAT_RECLAIM_DAYS` and the index supporting it exist;
-  the cron that acts on them does not. Until it runs, a site that vanishes holds
-  its seat until someone releases it by hand.
 - **Rate limiting.** The older spec had it; there is no edge limiter here yet.
   `/api/v1/activate` is the endpoint that wants one first.
 - **Icon and banner assets.** `updates/info` points at `/assets/icon-*.png`,
@@ -214,7 +289,11 @@ Also outstanding, and named so they are not forgotten:
 
 - `npm run lint` — clean.
 - `npm run typecheck` — 0 errors across 1292 files.
-- `npm test` — 66 tests, 6 files, all passing.
+- `npm test` — 92 unit tests passing; the 9 Postgres integration tests skip
+  without `SEAT_TEST_DATABASE_URL`, keeping CI offline.
+- `seats.integration.test.ts` against a live Neon branch — 9 passing across
+  repeated runs, including twelve-way concurrency on one- and three-seat
+  licences.
 - `npm run build` — Vercel adapter output produced.
 - `drizzle-kit migrate` against Neon branch `claude-schema-verify` — exit 0,
   six tables created with the expected columns and indexes.

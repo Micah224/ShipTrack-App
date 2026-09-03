@@ -84,3 +84,24 @@ export function effectiveFeatures(license: Pick<License, 'tier' | 'features'>): 
 	}
 	return featuresForTier(license.tier as Tier);
 }
+
+/**
+ * The caps a licence actually carries.
+ *
+ * Mirrors `effectiveFeatures`. Without this, a bespoke licence got its custom
+ * features but silently kept its tier's numeric caps -- sold multi-branch,
+ * capped at one -- which is a worse failure than not supporting overrides at
+ * all, because nothing surfaces it.
+ */
+export function effectiveLimits(license: Pick<License, 'tier' | 'limits'>): TierLimits {
+	const stored = license.limits;
+	if (stored && typeof stored === 'object') {
+		const tier = limitsForTier(license.tier as Tier);
+		return {
+			branches: stored.branches !== undefined ? stored.branches : tier.branches,
+			auditRetentionDays:
+				stored.auditRetentionDays !== undefined ? stored.auditRetentionDays : tier.auditRetentionDays
+		};
+	}
+	return limitsForTier(license.tier as Tier);
+}

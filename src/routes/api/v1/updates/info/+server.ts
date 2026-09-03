@@ -1,13 +1,9 @@
 import type { RequestHandler } from './$types';
 import { findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
-import { latestRelease } from '$lib/server/domain/releases';
+import { latestRelease, releaseById } from '$lib/server/domain/releases';
 import { optional, required } from '$lib/server/env';
 import { fail, ok, readJson } from '$lib/server/http';
-
-interface InfoBody {
-	key?: string;
-	site_url?: string;
-}
+import { InvalidField, str } from '$lib/server/validate';
 
 /**
  * Feeds the `plugins_api` filter — the "View version details" modal.
@@ -17,12 +13,17 @@ interface InfoBody {
  * error, which is why the changelog falls back to a sentence instead of null.
  */
 export const POST: RequestHandler = async ({ request }) => {
-	const body = await readJson<InfoBody>(request);
-	if (!body?.key) {
-		return fail(refusal('invalid_request', 'key is required.', 400));
+	const body = await readJson<unknown>(request);
+
+	let key: string;
+	try {
+		key = str(body, 'key', { max: 128 });
+	} catch (error) {
+		if (error instanceof InvalidField) return fail(refusal('invalid_request', error.message, 400));
+		throw error;
 	}
 
-	const license = await findLicenseByKey(body.key);
+	const license = await findLicenseByKey(key);
 	if (!license) {
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
 	}
@@ -30,7 +31,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	const denied = stateRefusal(licenseState(license));
 	if (denied) return fail(denied);
 
-	const release = await latestRelease();
+	const summary = await latestRelease();
+	if (!summary) {
+		return fail('no_release', 'No release has been ingested yet.', 404);
+	}
+
+	// The only endpoint that needs the changelog, so it is the only one that
+	// pays for fetching it.
+	const release = await releaseById(summary.id);
 	if (!release) {
 		return fail('no_release', 'No release has been ingested yet.', 404);
 	}

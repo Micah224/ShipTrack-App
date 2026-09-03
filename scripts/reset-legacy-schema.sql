@@ -1,4 +1,4 @@
--- Retire the 2026-08-31 "Project A" schema before applying 0000_init_licensing.
+-- Reset the public schema before applying 0000_init_licensing.
 --
 -- WHY THIS EXISTS
 --   The Neon project was migrated on 2026-09-02 against the earlier
@@ -33,6 +33,15 @@
 
 BEGIN;
 
+-- Tables this branch's own migration creates. Dropped so the script does what
+-- its comment claims: a migration that failed part-way through can be retried
+-- after running this, rather than dying on `relation "audit_logs" already
+-- exists` -- the same silent non-zero exit this file exists to prevent.
+DROP TABLE IF EXISTS download_tokens CASCADE;
+DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS releases CASCADE;
+
+-- Tables from the superseded 2026-08-31 design.
 DROP TABLE IF EXISTS admin_audit CASCADE;
 DROP TABLE IF EXISTS rate_buckets CASCADE;
 DROP TABLE IF EXISTS customer_identities CASCADE;

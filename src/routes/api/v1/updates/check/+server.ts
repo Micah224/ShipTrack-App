@@ -12,13 +12,7 @@ import {
 import { isNewer, latestRelease } from '$lib/server/domain/releases';
 import { classifySite } from '$lib/server/domain/site';
 import { fail, ok, readJson } from '$lib/server/http';
-
-interface CheckBody {
-	key?: string;
-	site_url?: string;
-	install_id?: string;
-	version?: string;
-}
+import { InvalidField, str } from '$lib/server/validate';
 
 function publicBase(): string {
 	return required('PUBLIC_APP_URL').replace(/\/$/, '');
@@ -32,12 +26,21 @@ function publicBase(): string {
  * failed update check as a broken plugin and nags the site owner about it.
  */
 export const POST: RequestHandler = async ({ request }) => {
-	const body = await readJson<CheckBody>(request);
-	if (!body?.key || !body.site_url || !body.version) {
-		return fail(refusal('invalid_request', 'key, site_url and version are required.', 400));
+	const body = await readJson<unknown>(request);
+
+	let key: string;
+	let siteUrl: string;
+	let version: string;
+	try {
+		key = str(body, 'key', { max: 128 });
+		siteUrl = str(body, 'site_url');
+		version = str(body, 'version', { max: 32 });
+	} catch (error) {
+		if (error instanceof InvalidField) return fail(refusal('invalid_request', error.message, 400));
+		throw error;
 	}
 
-	const license = await findLicenseByKey(body.key);
+	const license = await findLicenseByKey(key);
 	if (!license) {
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
 	}
@@ -49,11 +52,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const release = await latestRelease();
-	if (!release || !isNewer(release.version, body.version)) {
-		return ok({ update_available: false, latest_version: release?.version ?? body.version });
+	if (!release || !isNewer(release.version, version)) {
+		return ok({ update_available: false, latest_version: release?.version ?? version });
 	}
 
-	const site = classifySite(body.site_url);
+	const site = classifySite(siteUrl);
 	const { token, hash } = generateDownloadToken();
 	const ttlMinutes = optionalNumber('DOWNLOAD_TOKEN_TTL_MINUTES', 15);
 

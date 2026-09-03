@@ -1,6 +1,6 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb } from '../db';
-import { activations, auditLogs, licenses, type License } from '../db/schema';
+import { auditLogs, licenses, type License } from '../db/schema';
 import { hashLicenseKey } from '../crypto/keys';
 import { optionalNumber } from '../env';
 
@@ -13,6 +13,10 @@ export interface LicenseRefusal {
 		| 'license_suspended'
 		| 'license_expired'
 		| 'seat_limit_reached'
+		// The install is registered to another host. Distinct from
+		// invalid_request because the plugin's remedy is different: re-activate,
+		// which re-checks the seat cap, rather than fix the request.
+		| 'domain_changed'
 		| 'invalid_request';
 	message: string;
 	status: number;
@@ -60,22 +64,6 @@ export function stateRefusal(state: LicenseState): LicenseRefusal | null {
 		default:
 			return null;
 	}
-}
-
-/** Live seats: activations that are unreleased and actually count against the cap. */
-export async function countSeats(licenseId: string): Promise<number> {
-	const db = getDb();
-	const rows = await db
-		.select({ used: sql<number>`count(*)::int` })
-		.from(activations)
-		.where(
-			and(
-				eq(activations.licenseId, licenseId),
-				isNull(activations.releasedAt),
-				eq(activations.countsSeat, true)
-			)
-		);
-	return rows[0]?.used ?? 0;
 }
 
 /** How long an unreachable install keeps its seat before it is reclaimed. */

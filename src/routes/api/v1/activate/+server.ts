@@ -1,40 +1,41 @@
-import { and, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
-import { getDb } from '$lib/server/db';
-import { activations } from '$lib/server/db/schema';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
-import {
-	audit,
-	countSeats,
-	findLicenseByKey,
-	licenseState,
-	refusal,
-	stateRefusal
-} from '$lib/server/domain/licenses';
+import { audit, findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
+import { claimSeat } from '$lib/server/domain/seats';
 import { classifySite } from '$lib/server/domain/site';
 import { clientIp, fail, ok, readJson } from '$lib/server/http';
-
-interface ActivateBody {
-	key?: string;
-	site_url?: string;
-	install_id?: string;
-	plugin_version?: string;
-	wp_version?: string;
-	php_version?: string;
-	map_provider?: string;
-	transport_modes?: string[];
-	nonce?: string;
-}
+import { InvalidField, optionalStr, optionalStrArray, str } from '$lib/server/validate';
 
 export const POST: RequestHandler = async ({ request }) => {
-	const body = await readJson<ActivateBody>(request);
-	if (!body?.key || !body.site_url || !body.install_id || !body.plugin_version) {
-		return fail(
-			refusal('invalid_request', 'key, site_url, install_id and plugin_version are required.', 400)
-		);
+	const body = await readJson<unknown>(request);
+
+	let key: string;
+	let siteUrl: string;
+	let installId: string;
+	let pluginVersion: string;
+	let telemetry;
+	let nonce: string | null;
+	try {
+		key = str(body, 'key', { max: 128 });
+		siteUrl = str(body, 'site_url');
+		installId = str(body, 'install_id', { max: 128 });
+		pluginVersion = str(body, 'plugin_version', { max: 32 });
+		nonce = optionalStr(body, 'nonce', { max: 128 });
+		telemetry = {
+			siteUrl,
+			ipAddress: clientIp(request),
+			pluginVersion,
+			wpVersion: optionalStr(body, 'wp_version', { max: 32 }),
+			phpVersion: optionalStr(body, 'php_version', { max: 32 }),
+			activeMapProvider: optionalStr(body, 'map_provider', { max: 32 }),
+			transportModesUsed: optionalStrArray(body, 'transport_modes')
+		};
+	} catch (error) {
+		if (error instanceof InvalidField) return fail(refusal('invalid_request', error.message, 400));
+		throw error;
 	}
 
-	const license = await findLicenseByKey(body.key);
+	const license = await findLicenseByKey(key);
 	if (!license) {
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
 	}
@@ -42,83 +43,41 @@ export const POST: RequestHandler = async ({ request }) => {
 	const state = licenseState(license);
 	const denied = stateRefusal(state);
 	if (denied) {
-		await audit('license.activate_denied', body.site_url, license.id, { reason: denied.code });
+		await audit('license.activate_denied', siteUrl, license.id, { reason: denied.code });
 		return fail(denied);
 	}
 
-	const site = classifySite(body.site_url);
+	const site = classifySite(siteUrl);
 	if (!site.domain) {
 		return fail(refusal('invalid_request', 'site_url did not contain a usable host.', 400));
 	}
 
-	const db = getDb();
-	const existing = await db
-		.select()
-		.from(activations)
-		.where(
-			and(eq(activations.licenseId, license.id), eq(activations.installId, body.install_id))
-		)
-		.limit(1);
+	const outcome = await claimSeat(license, installId, site, telemetry);
 
-	const telemetry = {
-		domain: site.domain,
-		siteUrl: body.site_url,
-		ipAddress: clientIp(request),
-		pluginVersion: body.plugin_version,
-		wpVersion: body.wp_version ?? null,
-		phpVersion: body.php_version ?? null,
-		activeMapProvider: body.map_provider ?? null,
-		transportModesUsed: body.transport_modes ?? [],
-		environment: site.environment,
-		countsSeat: site.countsSeat,
-		lastHeartbeat: new Date()
-	};
-
-	let used = await countSeats(license.id);
-
-	if (existing[0]) {
-		// A re-activation of an install we already know: refresh its telemetry and
-		// un-release it if it had been deactivated. No seat is consumed twice.
-		await db
-			.update(activations)
-			.set({ ...telemetry, releasedAt: null, releaseReason: null })
-			.where(eq(activations.id, existing[0].id));
-
-		if (existing[0].releasedAt && site.countsSeat) used += 1;
-	} else {
-		if (site.countsSeat && used >= license.maxSeats) {
-			await audit('license.seat_limit', site.domain, license.id, {
-				used,
-				max: license.maxSeats,
-				install_id: body.install_id
-			});
-			return fail(
-				refusal(
-					'seat_limit_reached',
-					`This licence covers ${license.maxSeats} production site(s) and all are in use. Deactivate one, or upgrade the licence.`
-				)
-			);
-		}
-
-		await db.insert(activations).values({
-			licenseId: license.id,
-			installId: body.install_id,
-			...telemetry
+	if (!outcome.ok) {
+		await audit('license.seat_limit', site.domain, license.id, {
+			used: outcome.used,
+			max: license.maxSeats,
+			install_id: installId
 		});
-
-		if (site.countsSeat) used += 1;
+		return fail(
+			refusal(
+				'seat_limit_reached',
+				`This licence covers ${license.maxSeats} production site(s) and all are in use. Deactivate one, or upgrade the licence.`
+			)
+		);
 	}
 
 	const entitlement = buildEntitlement(
 		license,
-		{ domain: site.domain, installId: body.install_id },
+		{ domain: site.domain, installId },
 		state,
-		{ used, total: license.maxSeats },
-		body.nonce
+		{ used: outcome.used, total: license.maxSeats },
+		nonce ?? undefined
 	);
 
 	await audit('license.activated', site.domain, license.id, {
-		install_id: body.install_id,
+		install_id: installId,
 		environment: site.environment,
 		counts_seat: site.countsSeat
 	});
@@ -131,6 +90,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		state,
 		environment: site.environment,
 		counts_seat: site.countsSeat,
-		seats: { used, total: license.maxSeats }
+		seats: { used: outcome.used, total: license.maxSeats }
 	});
 };

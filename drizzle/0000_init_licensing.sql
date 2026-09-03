@@ -1,7 +1,7 @@
 CREATE TYPE "public"."activation_environment" AS ENUM('PRODUCTION', 'STAGING', 'DEVELOPMENT', 'LOCAL');--> statement-breakpoint
 CREATE TYPE "public"."license_status" AS ENUM('ACTIVE', 'SUSPENDED', 'EXPIRED', 'REVOKED');--> statement-breakpoint
 CREATE TYPE "public"."license_tier" AS ENUM('STARTER', 'PROFESSIONAL', 'ENTERPRISE');--> statement-breakpoint
-CREATE TYPE "public"."activation_release_reason" AS ENUM('SELF_SERVICE', 'AUTO_RECLAIM', 'ADMIN');--> statement-breakpoint
+CREATE TYPE "public"."activation_release_reason" AS ENUM('SELF_SERVICE', 'AUTO_RECLAIM', 'ADMIN', 'SUPERSEDED');--> statement-breakpoint
 CREATE TABLE "activations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"license_id" uuid NOT NULL,
@@ -17,6 +17,7 @@ CREATE TABLE "activations" (
 	"environment" "activation_environment" DEFAULT 'PRODUCTION' NOT NULL,
 	"counts_seat" boolean DEFAULT true NOT NULL,
 	"last_heartbeat" timestamp with time zone DEFAULT now() NOT NULL,
+	"seat_claimed_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"released_at" timestamp with time zone,
 	"release_reason" "activation_release_reason"
@@ -66,7 +67,8 @@ CREATE TABLE "licenses" (
 	"status" "license_status" DEFAULT 'ACTIVE' NOT NULL,
 	"expires_at" timestamp with time zone,
 	"grace_period_days" integer DEFAULT 7 NOT NULL,
-	"features" jsonb DEFAULT '["truck","plane"]'::jsonb NOT NULL,
+	"features" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"limits" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "licenses_key_hash_unique" UNIQUE("key_hash")
@@ -98,9 +100,11 @@ ALTER TABLE "licenses" ADD CONSTRAINT "licenses_customer_id_customers_id_fk" FOR
 CREATE UNIQUE INDEX "activation_install_unique" ON "activations" USING btree ("license_id","install_id");--> statement-breakpoint
 CREATE INDEX "activation_domain_idx" ON "activations" USING btree ("domain");--> statement-breakpoint
 CREATE INDEX "activation_seat_idx" ON "activations" USING btree ("license_id","released_at","counts_seat");--> statement-breakpoint
+CREATE INDEX "activation_claim_idx" ON "activations" USING btree ("license_id","seat_claimed_at");--> statement-breakpoint
 CREATE INDEX "activation_heartbeat_idx" ON "activations" USING btree ("last_heartbeat");--> statement-breakpoint
 CREATE INDEX "audit_license_idx" ON "audit_logs" USING btree ("license_id","created_at");--> statement-breakpoint
 CREATE INDEX "download_token_expiry_idx" ON "download_tokens" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "license_hash_status_idx" ON "licenses" USING btree ("key_hash","status");--> statement-breakpoint
 CREATE INDEX "license_prefix_idx" ON "licenses" USING btree ("key_prefix");--> statement-breakpoint
-CREATE INDEX "license_customer_idx" ON "licenses" USING btree ("customer_id");
+CREATE INDEX "license_customer_idx" ON "licenses" USING btree ("customer_id");--> statement-breakpoint
+CREATE INDEX "release_published_idx" ON "releases" USING btree ("published_at");

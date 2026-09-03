@@ -1,5 +1,5 @@
 {
-  "id": "d13e8b9a-64db-4e3c-bfd4-e95013c1da68",
+  "id": "c9fc217e-8d9b-41bc-be0e-678ebbb29653",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -98,6 +98,13 @@
           "notNull": true,
           "default": "now()"
         },
+        "seat_claimed_at": {
+          "name": "seat_claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -173,6 +180,27 @@
             },
             {
               "expression": "counts_seat",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "activation_claim_idx": {
+          "name": "activation_claim_idx",
+          "columns": [
+            {
+              "expression": "license_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seat_claimed_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -569,7 +597,13 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[\"truck\",\"plane\"]'::jsonb"
+          "default": "'[]'::jsonb"
+        },
+        "limits": {
+          "name": "limits",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -757,7 +791,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "release_published_idx": {
+          "name": "release_published_idx",
+          "columns": [
+            {
+              "expression": "published_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -817,7 +867,8 @@
       "values": [
         "SELF_SERVICE",
         "AUTO_RECLAIM",
-        "ADMIN"
+        "ADMIN",
+        "SUPERSEDED"
       ]
     }
   },

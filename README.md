@@ -53,6 +53,22 @@ npm run license:mint -- --email you@example.com --name "You" --tier PROFESSIONAL
 npm run check     # lint + typecheck + test + build
 ```
 
+The seat-accounting tests need a real Postgres and are skipped without one, so
+CI stays offline. To run them, point them at a disposable Neon branch — never
+production, they write and truncate:
+
+```bash
+SEAT_TEST_DATABASE_URL='postgres://...' npx vitest run seats.integration
+```
+
+## Scheduled maintenance
+
+`vercel.json` runs `/api/internal/cron/maintenance` daily. It purges spent
+download tokens and reclaims seats from installs that stopped checking in after
+`SEAT_RECLAIM_DAYS`. It refuses to run unless `CRON_SECRET` is set, so an
+unconfigured deployment fails visibly rather than exposing an endpoint that
+deletes rows.
+
 ## Notes for whoever runs the first production migration
 
 The Neon database still carries the tables from the superseded 2026-08-31

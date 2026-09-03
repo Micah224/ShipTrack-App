@@ -1,80 +1,94 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/db';
 import { activations } from '$lib/server/db/schema';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
-import {
-	countSeats,
-	findLicenseByKey,
-	licenseState,
-	refusal,
-	stateRefusal
-} from '$lib/server/domain/licenses';
+import { findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
+import { countSeats, findActivation } from '$lib/server/domain/seats';
 import { classifySite } from '$lib/server/domain/site';
 import { clientIp, fail, ok, readJson } from '$lib/server/http';
 import { latestRelease } from '$lib/server/domain/releases';
-
-interface HeartbeatBody {
-	key?: string;
-	site_url?: string;
-	install_id?: string;
-	plugin_version?: string;
-	wp_version?: string;
-	php_version?: string;
-	map_provider?: string;
-	transport_modes?: string[];
-	nonce?: string;
-}
+import { InvalidField, optionalStr, optionalStrArray, str } from '$lib/server/validate';
 
 /**
  * The plugin's periodic check-in. Re-signs a fresh entitlement, refreshes
- * telemetry, and tells the site whether a newer release exists so the update
- * check has something to act on without a second round trip.
+ * telemetry, and reports the newest release so the update check needs no
+ * second round trip.
+ *
+ * Note what this deliberately does NOT update: `domain`, `environment` and
+ * `counts_seat`. Those are decided at activation, where the seat cap is
+ * enforced. Letting a heartbeat rewrite them from an unauthenticated
+ * `site_url` meant any install could relabel itself as staging, drop off the
+ * seat ledger, and carry on holding a valid entitlement -- unlimited
+ * production sites on a one-seat licence. A site that genuinely moves
+ * re-activates, and re-activation re-checks the cap.
  */
 export const POST: RequestHandler = async ({ request }) => {
-	const body = await readJson<HeartbeatBody>(request);
-	if (!body?.key || !body.site_url || !body.install_id) {
-		return fail(refusal('invalid_request', 'key, site_url and install_id are required.', 400));
+	const body = await readJson<unknown>(request);
+
+	let key: string;
+	let siteUrl: string;
+	let installId: string;
+	let nonce: string | null;
+	let reported;
+	try {
+		key = str(body, 'key', { max: 128 });
+		siteUrl = str(body, 'site_url');
+		installId = str(body, 'install_id', { max: 128 });
+		nonce = optionalStr(body, 'nonce', { max: 128 });
+		reported = {
+			pluginVersion: optionalStr(body, 'plugin_version', { max: 32 }),
+			wpVersion: optionalStr(body, 'wp_version', { max: 32 }),
+			phpVersion: optionalStr(body, 'php_version', { max: 32 }),
+			activeMapProvider: optionalStr(body, 'map_provider', { max: 32 }),
+			transportModesUsed: optionalStrArray(body, 'transport_modes')
+		};
+	} catch (error) {
+		if (error instanceof InvalidField) return fail(refusal('invalid_request', error.message, 400));
+		throw error;
 	}
 
-	const license = await findLicenseByKey(body.key);
+	const license = await findLicenseByKey(key);
 	if (!license) {
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
 	}
 
-	const site = classifySite(body.site_url);
-	const db = getDb();
-	const rows = await db
-		.select()
-		.from(activations)
-		.where(and(eq(activations.licenseId, license.id), eq(activations.installId, body.install_id)))
-		.limit(1);
-
-	const activation = rows[0];
+	const activation = await findActivation(license.id, installId);
 	if (!activation || activation.releasedAt) {
-		// Not an error the plugin should sit on: it needs to re-activate, which is
-		// a different call, so say precisely that rather than returning 403.
 		return fail(
 			refusal('invalid_request', 'This install is not activated. Call /api/v1/activate first.', 409)
+		);
+	}
+
+	const site = classifySite(siteUrl);
+	if (site.domain !== activation.domain) {
+		// Not a failure the plugin should retry on: the seat was granted against
+		// the recorded domain, and moving is an activation decision.
+		return fail(
+			refusal(
+				'domain_changed',
+				'This install is registered to a different domain. Call /api/v1/activate to move it.',
+				409
+			)
 		);
 	}
 
 	const state = licenseState(license);
 	const denied = stateRefusal(state);
 
+	const db = getDb();
 	await db
 		.update(activations)
 		.set({
-			domain: site.domain,
-			siteUrl: body.site_url,
+			siteUrl,
 			ipAddress: clientIp(request),
-			pluginVersion: body.plugin_version ?? activation.pluginVersion,
-			wpVersion: body.wp_version ?? activation.wpVersion,
-			phpVersion: body.php_version ?? activation.phpVersion,
-			activeMapProvider: body.map_provider ?? activation.activeMapProvider,
-			transportModesUsed: body.transport_modes ?? activation.transportModesUsed,
-			environment: site.environment,
-			countsSeat: site.countsSeat,
+			pluginVersion: reported.pluginVersion ?? activation.pluginVersion,
+			wpVersion: reported.wpVersion ?? activation.wpVersion,
+			phpVersion: reported.phpVersion ?? activation.phpVersion,
+			activeMapProvider: reported.activeMapProvider ?? activation.activeMapProvider,
+			transportModesUsed: reported.transportModesUsed.length
+				? reported.transportModesUsed
+				: activation.transportModesUsed,
 			lastHeartbeat: new Date()
 		})
 		.where(eq(activations.id, activation.id));
@@ -82,10 +96,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const used = await countSeats(license.id);
 	const entitlement = buildEntitlement(
 		license,
-		{ domain: site.domain, installId: body.install_id },
+		{ domain: activation.domain, installId },
 		state,
 		{ used, total: license.maxSeats },
-		body.nonce
+		nonce ?? undefined
 	);
 
 	const release = await latestRelease();
@@ -104,5 +118,3 @@ export const POST: RequestHandler = async ({ request }) => {
 
 /** Liveness for uptime checks; deliberately says nothing about any licence. */
 export const GET: RequestHandler = async () => ok({ service: 'shiptrack-licence', ready: true });
-
-

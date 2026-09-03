@@ -1,7 +1,7 @@
 import { newNonce, signLicenseToken, type LicenseTokenPayload, type SignedToken } from '../crypto/ed25519';
 import { optionalNumber } from '../env';
 import type { Activation, License } from '../db/schema';
-import { effectiveFeatures, limitsForTier, type Tier } from './tiers';
+import { effectiveFeatures, effectiveLimits } from './tiers';
 import type { LicenseState } from './licenses';
 
 export function tokenTtlSeconds(): number {
@@ -36,7 +36,7 @@ export function buildEntitlement(
 		features: state === 'ACTIVE' || state === 'GRACE' ? effectiveFeatures(license) : [],
 		status: state,
 		seats,
-		limits: limitsForTier(license.tier as Tier),
+		limits: effectiveLimits(license),
 		exp,
 		iat,
 		// A minute of slack: WordPress hosts drift, and rejecting a token the

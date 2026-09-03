@@ -8,21 +8,19 @@ import { optional, required } from '$lib/server/env';
 import { uploadReleaseZip } from '$lib/server/r2';
 import { audit } from '$lib/server/domain/licenses';
 import { fail, ok } from '$lib/server/http';
+import { sanitizeChangelogHtml } from '$lib/server/sanitize';
+import { timingSafeEqualString } from '$lib/server/crypto/compare';
 
 /**
- * Constant-time comparison of the delivery signature.
- *
- * `timingSafeEqual` throws on a length mismatch rather than returning false, so
- * the lengths are checked first — a forged header of the wrong length would
- * otherwise produce a 500 instead of a 401, which tells an attacker more than
- * the failure itself does.
+ * Constant-time comparison of the delivery signature. The length-mismatch trap
+ * in `timingSafeEqual` is handled inside `timingSafeEqualString`, which is why
+ * this does not reimplement it: a forged header of the wrong length must be a
+ * 401, not the 500 a raw `timingSafeEqual` would throw.
  */
 function signatureMatches(rawBody: string, header: string | null, secret: string): boolean {
 	if (!header) return false;
 	const digest = `sha256=${crypto.createHmac('sha256', secret).update(rawBody).digest('hex')}`;
-	const a = Buffer.from(header);
-	const b = Buffer.from(digest);
-	return a.length === b.length && crypto.timingSafeEqual(a, b);
+	return timingSafeEqualString(header, digest);
 }
 
 interface ReleaseAsset {
@@ -86,7 +84,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	await uploadReleaseZip(r2Key, buffer, fileSha256);
 
 	const changelog = release.body ?? '';
-	const changelogHtml = await marked.parse(changelog);
+	// Sanitised before storage, not on the way out: the stored column is read by
+	// more than one endpoint, and a sanitiser that has to be remembered at each
+	// read is one that eventually is not.
+	const changelogHtml = sanitizeChangelogHtml(await marked.parse(changelog));
 
 	const db = getDb();
 	await db
