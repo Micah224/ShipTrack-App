@@ -61,6 +61,23 @@ production, they write and truncate:
 SEAT_TEST_DATABASE_URL='postgres://...' npx vitest run seats.integration
 ```
 
+## Admin console
+
+`/admin` — dashboard, licence manager, seat inspector, release repository and
+audit log, behind a scrypt password and an HS256 session cookie.
+
+```bash
+read -rs PW && printf '%s' "$PW" | npm run admin:hash   # -> ADMIN_PASSWORD_HASH
+```
+
+Set `ADMIN_EMAIL`, that hash, and a 32-character `ADMIN_JWT_SECRET`. Ten failed
+logins from one address in fifteen minutes blocks further attempts, correct
+password included.
+
+Note that stored secrets must not contain `$`: Vite runs `.env` values through
+dotenv-expand, which silently eats `$`-prefixed segments. Everything this
+project generates already avoids it.
+
 ## Scheduled maintenance
 
 `vercel.json` runs `/api/internal/cron/maintenance` daily. It purges spent

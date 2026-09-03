@@ -1,10 +1,9 @@
 # Licensing Platform — SvelteKit on Vercel
 
-> Phases 1–4 of the ShipTrack Pro Custom Licensing & GitHub Distribution master
+> Phases 1–5 of the ShipTrack Pro Custom Licensing & GitHub Distribution master
 > plan: the database, the cryptography, the licence API, release ingestion into
-> R2, and the WordPress update protocol. Ends when a minted key activates over
-> `curl`, returns a signed entitlement, and a published GitHub release reaches a
-> WordPress site as a native update.
+> R2, the WordPress update protocol, and the admin console. Ends when an
+> operator can sign in, mint a key, watch it activate, and revoke it.
 
 | | |
 | --- | --- |
@@ -271,12 +270,70 @@ branch. The ones that changed a decision rather than a line:
   the legacy tables and not the ones the migration creates, so the retry it
   promised died on `relation "audit_logs" already exists`.
 
+## 8.2 Phase 5: the admin console
+
+Five screens under `/admin`, on a Skeleton v5 shell.
+
+**The theme is generated, not hand-picked.** `src/shiptrack-theme.css` builds
+each colour ramp in OKLCH from the palette the plan names — Deep Navy `#0B3B5C`,
+Amber `#F59E0B`, Cream `#F7F4EC` — so lightness steps evenly, chroma tapers at
+both ends, and the 500 shade round-trips to the exact brand hex. Skeleton's
+non-colour custom properties are left as the library ships them, which keeps
+this a theme rather than a fork.
+
+**Auth is a scrypt password plus an HS256 session cookie.** Symmetric signing
+here, unlike the Ed25519 used for entitlements, and deliberately: an entitlement
+is verified by software we do not control, which is what makes asymmetric
+signing worth its cost; a session cookie is only ever verified by the process
+that issued it.
+
+The guard in `hooks.server.ts` is a path prefix rather than per-route checks, so
+a new admin page is protected by existing rather than by someone remembering.
+
+**Login rate limiting reads the audit log** instead of a counter table. The
+failures have to be recorded anyway, and "how many times has this address failed
+lately" is a question the audit log already answers. Ten failures in fifteen
+minutes blocks further attempts from that address — including ones with the
+correct password, which is the point.
+
+**Every mutation is audited**, and every key reveal especially: a key that can
+be read without a trace is one nobody can account for afterwards.
+
+### 8.2.1 The `$` that ate the password hash
+
+The scrypt envelope originally used `$` separators, as PHC-style hashes
+conventionally do. Vite runs `.env` values through `dotenv-expand`, which treats
+`$32768` and `$8` inside a value as variable references and substitutes them
+with nothing — so the hash arrived at the server silently truncated, every login
+failed with "credentials not recognised", and the same hash verified perfectly
+from a Node CLI.
+
+The envelope now uses `.`, matching the AES-GCM envelope, and a test asserts the
+hash contains no `$` at all. Worth knowing before choosing a delimiter for any
+other secret this project stores.
+
+### 8.2.2 Configuration reaches the server through Vite
+
+`env.ts` reads `process.env`, and Vite does not populate `process.env` from
+`.env` — it exposes those values through `import.meta.env` instead. Without
+help, `npm run dev` starts cleanly and then reports every secret as missing.
+`vite.config.ts` now copies `.env` into `process.env` at config time, filling
+only keys that are not already set so a real environment always wins. The CLIs
+get the same behaviour through `node --env-file-if-exists=.env`.
+
+### 8.2.3 What the dashboard does not show
+
+The plan's dashboard calls for ARR and MRR. No table records what a licence was
+sold for — the master plan's schema has no `orders` table and no price on the
+licence — so any revenue figure here would be invented. The dashboard shows what
+the data supports (active licences, seat utilisation, version adoption, tier
+mix, stale installs) and says plainly why revenue is absent. Adding a price to
+the licence, or restoring an orders table, is what would make that number real.
+
 ## 9. Not in this change
 
-Phase 5 (Skeleton admin portal: dashboard, licence manager, seat inspector,
-release repository, audit view) and Phase 6 (the PHP client — `LicenseService`,
-`UpdateManager`, REST gating, the Svelte licence card). The plugin repository is
-untouched by this branch.
+Phase 6 — the PHP client: `LicenseService`, `UpdateManager`, REST gating and the
+Svelte licence card. The plugin repository is untouched by this branch.
 
 Also outstanding, and named so they are not forgotten:
 
@@ -289,8 +346,15 @@ Also outstanding, and named so they are not forgotten:
 
 - `npm run lint` — clean.
 - `npm run typecheck` — 0 errors across 1292 files.
-- `npm test` — 92 unit tests passing; the 9 Postgres integration tests skip
+- `npm test` — 107 unit tests passing; the 9 Postgres integration tests skip
   without `SEAT_TEST_DATABASE_URL`, keeping CI offline.
+- The console driven end to end against a live Neon branch: sign in, mint a
+  PROFESSIONAL licence, activate it through `/api/v1/activate` (which returned
+  the full professional feature set and `{branches: 5, auditRetentionDays: 90}`
+  — the proof that the features-default fix works), reveal the key, unbind the
+  seat, revoke, and confirm the licence API then refuses with `license_revoked`.
+  Login rate limiting confirmed to return 429 after ten failures, including for
+  the correct password.
 - `seats.integration.test.ts` against a live Neon branch — 9 passing across
   repeated runs, including twelve-way concurrency on one- and three-seat
   licences.

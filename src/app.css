@@ -3,7 +3,7 @@
 /* Skeleton v5 ships its presets inside the main entry; there is no separate
    optional/presets export as there was in v3. */
 @import '@skeletonlabs/skeleton';
-@import '@skeletonlabs/skeleton/themes/cerberus';
+@import './shiptrack-theme.css';
 
 /* Tailwind scans source files, not node_modules, so the component library's
    own class names have to be pointed at explicitly or they get purged. */

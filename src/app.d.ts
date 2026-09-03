@@ -1,11 +1,10 @@
-// See https://svelte.dev/docs/kit/types#app.d.ts
+import type { AdminIdentity } from '$lib/server/admin/session';
+
 declare global {
 	namespace App {
-		// interface Error {}
-		// interface Locals {}
-		// interface PageData {}
-		// interface PageState {}
-		// interface Platform {}
+		interface Locals {
+			admin: AdminIdentity | null;
+		}
 	}
 }
 
