@@ -1,0 +1,90 @@
+name: branch-flow
+
+# Enforces the one release path: feature -> develop -> main.
+#
+# WHY THIS EXISTS
+#   Ported from the ShipTrack Pro plugin repository, where these checks were
+#   written after main drifted for real. A develop -> main PR was merged as a
+#   *squash*, producing a commit on main whose content duplicated several develop
+#   commits but shared no identity with them. main then sat ahead of develop, and
+#   both following develop -> main PRs hit the same conflicts and were abandoned.
+#
+#   Setting the same guards up here before the first merge is far cheaper than
+#   untangling it afterwards, which is the whole reason this file exists on day
+#   one rather than after the first incident.
+#
+# Runs on `edited` as well, so retargeting a PR re-checks it — a plain retarget
+# does NOT re-trigger ci.yml, which defaults to [opened, synchronize, reopened].
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+
+# Permissions are declared per job, not here: only main-not-ahead checks out the
+# repository. The other two read the event payload and need no token scope at
+# all, and granting them one workflow-wide would be handing out access nothing uses.
+
+concurrency:
+  group: branch-flow-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  source-branch:
+    name: PR into main comes from develop
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check the head branch
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REF" == "develop" || "$HEAD_REF" == hotfix/* ]]; then
+            echo "head '$HEAD_REF' may target main."
+            exit 0
+          fi
+          echo "::error title=Wrong base branch::'$HEAD_REF' cannot target main. Feature work goes to develop; only 'develop' or a 'hotfix/*' branch may target main. Retarget this PR to develop."
+          exit 1
+
+  no-squash-reminder:
+    name: develop into main must be a merge commit
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.ref == 'develop'
+    permissions: {}
+    steps:
+      # Advisory only — GitHub decides the merge method at merge time, so a check
+      # cannot block it. The real enforcement is the protect-main ruleset
+      # restricting allowed merge methods to "merge". This makes the reason
+      # visible on the PR itself, where whoever clicks the button will see it.
+      - name: Explain
+        run: |
+          echo "::notice title=Merge this with a merge commit::Squashing develop into main creates a commit develop can never contain, and every later develop -> main PR then conflicts on it. The protect-main ruleset restricts merge methods to 'merge' only."
+
+  main-not-ahead:
+    name: main is not ahead of develop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Catches drift that has already happened, rather than waiting for the next
+      # develop -> main PR to conflict and get abandoned.
+      - name: Compare main and develop
+        run: |
+          set -euo pipefail
+          git fetch origin main:refs/remotes/origin/main develop:refs/remotes/origin/develop --quiet
+
+          ahead="$(git rev-list --count origin/develop..origin/main)"
+          if [[ "$ahead" -eq 0 ]]; then
+            echo "main has no commits develop is missing."
+            exit 0
+          fi
+
+          echo "main is $ahead commit(s) ahead of develop:"
+          git log --oneline origin/develop..origin/main
+          echo "::error title=main is ahead of develop::main carries $ahead commit(s) develop does not have, so this PR will conflict and future merges compute from a stale base. Back-merge main into develop first."
+          exit 1

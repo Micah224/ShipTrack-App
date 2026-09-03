@@ -1,2 +1,63 @@
-# ShipTrack-App
-ShipTrack Pro plugin sales and license management app
+# ShipTrack Pro — Licensing & Distribution Platform
+
+SvelteKit 5 on Vercel, backed by Neon Postgres 18 and Cloudflare R2. It issues
+signed entitlements to [ShipTrack Pro](https://github.com/Micah224/ShipTrack-Pro)
+installs, meters seats, ingests plugin releases from GitHub, and serves plugin
+updates to WordPress through the native update pipeline.
+
+## What runs where
+
+| Piece | Where |
+| --- | --- |
+| API + UI | SvelteKit 5, Vercel project `ship-track-app`, Node 22 serverless |
+| Database | Neon `ShipTrack Pro`, PostgreSQL 18, `aws-eu-west-2` |
+| Release archives | Cloudflare R2 bucket `shiptrack-app-store` |
+| Build source | GitHub Releases on the plugin repository, via `release.published` webhook |
+| Signing | Ed25519, private key in Vercel env, public key compiled into the plugin |
+
+## API
+
+All endpoints take and return JSON. Failures carry a machine-readable `code`;
+the plugin branches on that, never on the prose.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v1/activate` | Bind an install to a licence, issue a signed entitlement |
+| POST | `/api/v1/heartbeat` | Refresh the entitlement, report telemetry, report the latest version |
+| POST | `/api/v1/deactivate` | Release a seat |
+| POST | `/api/v1/updates/check` | WordPress update transient payload |
+| POST | `/api/v1/updates/info` | `plugins_api` version-details modal |
+| GET | `/api/v1/updates/download/[token]` | Consume a single-use token, 302 to a presigned R2 URL |
+| POST | `/api/webhooks/github` | Ingest a published release into R2 and the database |
+
+## Local setup
+
+```bash
+npm install
+cp .env.example .env
+npm run keys:generate      # prints the Ed25519 pair and both secrets
+# paste the output into .env, then add the Neon and R2 credentials
+npm run db:migrate
+npm run dev
+```
+
+Mint a licence to test against:
+
+```bash
+npm run license:mint -- --email you@example.com --name "You" --tier PROFESSIONAL
+```
+
+## Checks
+
+```bash
+npm run check     # lint + typecheck + test + build
+```
+
+## Notes for whoever runs the first production migration
+
+The Neon database still carries the tables from the superseded 2026-08-31
+design. `drizzle-kit migrate` will fail against it — and reports that failure
+only as a non-zero exit code, with no message. Run
+`scripts/reset-legacy-schema.sql` first, having checked the row counts it names
+are still zero. Full reasoning is in
+`docs/superpowers/specs/2026-09-03-licensing-platform-sveltekit-design.md`.
