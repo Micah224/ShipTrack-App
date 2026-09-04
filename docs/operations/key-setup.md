@@ -286,15 +286,39 @@ environment variables cannot fix it. Either merge `develop` into `main` (the
 designed path — `backmerge.yml` then keeps `develop` in sync), or point the
 project's production branch elsewhere.
 
+**Turn off Vercel Authentication for whatever origin customers use.** This is
+the one that will not announce itself. Deployment Protection defaults to
+*Standard Protection* — `ssoProtection: all_except_custom_domains` — which
+protects every `*.vercel.app` URL including the production one, and exempts
+only a real custom domain. A protected origin answers **every** request, the
+licence API included, with a 302 to `vercel.com/sso-api`. In a browser you are
+logged in and see nothing wrong; from a WordPress site there is no session, so
+`wp_remote_post` follows nothing (`LicenseClient` sets `redirection => 0`) and
+every activation fails with `transport_error` — a code that points at the
+network, not at a setting.
+
+So pick one, in Settings → Deployment Protection:
+
+- attach a real custom domain (`licence.example.com`), which Standard
+  Protection exempts, and point the plugin at it via `PUBLIC_APP_URL` and the
+  `shiptrack_pro/license_api_base` filter; or
+- set Vercel Authentication to **Only Preview Deployments**, which leaves the
+  production `*.vercel.app` origin public — what the compiled-in
+  `LicenseClient::DEFAULT_BASE` expects.
+
 Verify the deployment is answering before you touch a real site:
 
 ```bash
-curl https://ship-track-app.vercel.app/api/v1/heartbeat
+curl -i https://ship-track-app.vercel.app/api/v1/heartbeat
+# HTTP/2 200
 # {"ok":true,"service":"shiptrack-licence","ready":true}
 ```
 
-A `DEPLOYMENT_NOT_FOUND` body means the domain is attached to no production
-deployment, not that the code is broken.
+Read the status line, not just the body. A `DEPLOYMENT_NOT_FOUND` body means
+the domain is attached to no production deployment. A **302 to
+`vercel.com/sso-api`** means Deployment Protection is still on and no customer
+site can reach you — that is the failure this section exists to stop you
+shipping.
 
 ---
 
