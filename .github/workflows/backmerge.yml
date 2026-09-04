@@ -1,0 +1,91 @@
+name: backmerge
+
+# Keeps develop in sync after main moves.
+#
+# WHY THIS EXISTS
+#   It is the other half of branch-flow.yml's `main-not-ahead` check. Merging
+#   develop -> main with a merge commit (which the protect-main ruleset requires)
+#   puts a commit on main that develop does not have — the merge commit itself.
+#   Without an automatic back-merge, the very next develop -> main PR fails
+#   `main-not-ahead`, and the checks we added to prevent drift become the thing
+#   blocking every release.
+#
+#   So: main-not-ahead detects drift, this prevents it. Neither works alone.
+#
+# Runs on every push to main, not only on merges, so a hotfix committed straight
+# to main is also carried back.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: backmerge
+  cancel-in-progress: false # never cancel mid-push
+
+jobs:
+  backmerge:
+    name: merge main into develop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: develop
+
+      - name: Merge main into develop
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main:refs/remotes/origin/main
+
+          if [[ -z "$(git rev-list HEAD..origin/main)" ]]; then
+            echo "status=uptodate" >> "$GITHUB_OUTPUT"
+            echo "develop already contains every commit on main; nothing to merge."
+            exit 0
+          fi
+
+          if git merge --no-ff --no-edit -m "chore(sync): merge main back into develop" origin/main; then
+            git push origin HEAD:develop
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+            echo "develop is now up to date with main."
+          else
+            git merge --abort || true
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a conflict-resolution PR
+        if: steps.merge.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # SHA-suffixed so a second conflicting sync cannot reuse a stale branch.
+          LABEL="$(git rev-parse --short origin/main)"
+          BRANCH="chore/backmerge-${LABEL}"
+          git push origin "origin/main:refs/heads/${BRANCH}" --force
+          gh pr create \
+            --base develop \
+            --head "$BRANCH" \
+            --title "chore(sync): back-merge main into develop (${LABEL})" \
+            --body "The automatic back-merge of \`main\` hit a merge conflict.
+
+          Resolve it and merge with a **merge commit** — squashing this would create yet another commit \`develop\` cannot see, which is the drift this job exists to prevent.
+
+          Until this lands, \`develop\` is behind \`main\` and the next develop -> main PR will fail the \`main-not-ahead\` check." \
+            || echo "PR already exists"
+
+      # No continue-on-error: a failed back-merge must go red so it gets noticed,
+      # rather than drifting silently until the next release is blocked by it.
+      - name: Fail loudly on conflict
+        if: steps.merge.outputs.status == 'conflict'
+        run: |
+          echo "::error title=Back-merge conflict::main -> develop conflicted. A PR was opened; resolve it before the next release."
+          exit 1
