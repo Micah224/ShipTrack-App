@@ -49,12 +49,12 @@ describe.skipIf(!DB_URL)('seat accounting against Postgres', () => {
 	beforeAll(async () => {
 		process.env.DATABASE_URL = DB_URL;
 		process.env.LICENSE_KEY_SECRET ??= Buffer.alloc(32, 3).toString('base64');
-		const dbmod = await import('../db');
+		const dbmod = await import('../db/index.ts');
 		db = dbmod.getDb();
-		schema = await import('../db/schema');
-		({ claimSeat, releaseSeat, countSeats } = await import('./seats'));
-		({ classifySite } = await import('./site'));
-		keys = await import('../crypto/keys');
+		schema = await import('../db/schema.ts');
+		({ claimSeat, releaseSeat, countSeats } = await import('./seats.ts'));
+		({ classifySite } = await import('./site.ts'));
+		keys = await import('../crypto/keys.ts');
 	});
 
 	it('admits the first production install and refuses the second on one seat', async () => {

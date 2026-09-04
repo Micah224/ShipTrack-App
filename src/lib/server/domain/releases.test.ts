@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareVersions, isNewer } from './releases';
+import { compareVersions, isNewer } from './releases.ts';
 
 describe('compareVersions', () => {
 	it('compares numerically, not lexically', () => {

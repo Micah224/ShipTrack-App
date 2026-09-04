@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifySite, normalizeDomain } from './site';
+import { classifySite, normalizeDomain } from './site.ts';
 
 describe('normalizeDomain', () => {
 	it('reduces a full URL to its host', () => {

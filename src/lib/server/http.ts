@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import type { LicenseRefusal } from './domain/licenses';
+import type { LicenseRefusal } from './domain/licenses.ts';
 
 /** Machine-readable refusals. The plugin branches on `code`, never on prose. */
 export function fail(refusalOrCode: LicenseRefusal | string, message?: string, status = 400) {

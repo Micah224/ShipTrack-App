@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { optional, required } from '../env';
+import { required } from '../env.ts';
 
 /**
  * The claims the WordPress plugin verifies offline.
@@ -42,8 +42,17 @@ function privateKey(): crypto.KeyObject {
 	return crypto.createPrivateKey({ key: required('ED25519_PRIVATE_KEY'), format: 'pem' });
 }
 
+/**
+ * Which key is signing right now.
+ *
+ * Required rather than defaulted. A default lets the server sign with a `kid`
+ * that names a key the plugin does not hold, and the failure lands entirely on
+ * the customer: every site refuses the entitlement with `unknown_key_id` while
+ * the server looks healthy. Missing configuration should stop the server, not
+ * the sites.
+ */
 export function activeKeyId(): string {
-	return optional('ED25519_KEY_ID', 'stp-2026a');
+	return required('ED25519_KEY_ID');
 }
 
 /**

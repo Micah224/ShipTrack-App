@@ -1,8 +1,8 @@
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
-import { getDb } from '../db';
-import { auditLogs } from '../db/schema';
-import { optional, optionalNumber } from '../env';
-import { verifyPassword } from './password';
+import { getDb } from '../db/index.ts';
+import { auditLogs } from '../db/schema.ts';
+import { optional, optionalNumber } from '../env.ts';
+import { verifyPassword } from './password.ts';
 
 export interface AdminIdentity {
 	email: string;

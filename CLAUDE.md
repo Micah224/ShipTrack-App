@@ -49,6 +49,10 @@ truncate. Never point them at production.
   it across; `env.ts` depends on that.
 - **A `WHERE` guard on an INSERT is not atomic** under READ COMMITTED. Seat
   capping is done by ranking and self-release — see `domain/seats.ts`.
+- **Relative imports under `src/lib/server/` must carry the `.ts` extension.**
+  Vite resolves extensionless specifiers; Node's ESM loader does not, and the
+  `scripts/*.ts` CLIs run under bare Node. `license:mint` died on
+  `ERR_MODULE_NOT_FOUND` for `../env` while the app and the tests were green.
 
 ## Agents
 

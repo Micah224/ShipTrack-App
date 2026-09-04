@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { optionalNumber, required } from '../env';
+import { optionalNumber, required } from '../env.ts';
 
 export interface AdminClaims {
 	sub: string;

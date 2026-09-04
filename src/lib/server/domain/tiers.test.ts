@@ -7,7 +7,7 @@ import {
 	effectiveLimits,
 	featuresForTier,
 	limitsForTier
-} from './tiers';
+} from './tiers.ts';
 
 describe('tier feature matrix', () => {
 	it('gates transport modes exactly as the commercial matrix says', () => {

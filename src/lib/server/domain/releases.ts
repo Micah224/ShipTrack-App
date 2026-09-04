@@ -1,6 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
-import { getDb } from '../db';
-import { releases, type Release } from '../db/schema';
+import { getDb } from '../db/index.ts';
+import { releases, type Release } from '../db/schema.ts';
 
 /**
  * Everything the update path needs, minus the two unbounded text columns.

@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
-import { getDb } from '../db';
-import { auditLogs, licenses, type License } from '../db/schema';
-import { hashLicenseKey } from '../crypto/keys';
-import { optionalNumber } from '../env';
+import { getDb } from '../db/index.ts';
+import { auditLogs, licenses, type License } from '../db/schema.ts';
+import { hashLicenseKey } from '../crypto/keys.ts';
+import { optionalNumber } from '../env.ts';
 
 export type LicenseState = 'ACTIVE' | 'GRACE' | 'EXPIRED' | 'SUSPENDED' | 'REVOKED';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidField, optionalStr, optionalStrArray, str } from './validate';
+import { InvalidField, optionalStr, optionalStrArray, str } from './validate.ts';
 
 describe('str', () => {
 	it('accepts a normal string', () => {

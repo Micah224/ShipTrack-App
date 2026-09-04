@@ -8,7 +8,7 @@ import {
 	hashLicenseKey,
 	licenseKeyPrefix,
 	normalizeLicenseKey
-} from './keys';
+} from './keys.ts';
 
 // 32 zero bytes, base64. Set before the module reads it, which it does lazily.
 process.env.LICENSE_KEY_SECRET = Buffer.alloc(32, 7).toString('base64');

@@ -1,9 +1,9 @@
 import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
-import { getDb } from '../db';
-import { activations, customers, licenses, releases } from '../db/schema';
-import { licenseState } from '../domain/licenses';
-import { DEFAULT_SEATS, type Tier } from '../domain/tiers';
-import { sanitizeChangelogHtml } from '../sanitize';
+import { getDb } from '../db/index.ts';
+import { activations, customers, licenses, releases } from '../db/schema.ts';
+import { licenseState } from '../domain/licenses.ts';
+import { DEFAULT_SEATS, type Tier } from '../domain/tiers.ts';
+import { sanitizeChangelogHtml } from '../sanitize.ts';
 
 export interface DashboardStats {
 	licenses: { total: number; active: number; revoked: number; expired: number; suspended: number };

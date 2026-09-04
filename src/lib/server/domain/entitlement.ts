@@ -1,8 +1,8 @@
-import { newNonce, signLicenseToken, type LicenseTokenPayload, type SignedToken } from '../crypto/ed25519';
-import { optionalNumber } from '../env';
-import type { Activation, License } from '../db/schema';
-import { effectiveFeatures, effectiveLimits } from './tiers';
-import type { LicenseState } from './licenses';
+import { newNonce, signLicenseToken, type LicenseTokenPayload, type SignedToken } from '../crypto/ed25519.ts';
+import { optionalNumber } from '../env.ts';
+import type { Activation, License } from '../db/schema.ts';
+import { effectiveFeatures, effectiveLimits } from './tiers.ts';
+import type { LicenseState } from './licenses.ts';
 
 export function tokenTtlSeconds(): number {
 	return optionalNumber('TOKEN_TTL_DAYS', 7) * 86_400;

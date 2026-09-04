@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { getDb } from '../db';
-import { activations, type Activation, type License } from '../db/schema';
-import type { SiteIdentity } from './site';
+import { getDb } from '../db/index.ts';
+import { activations, type Activation, type License } from '../db/schema.ts';
+import type { SiteIdentity } from './site.ts';
 
 /*
  * Seat accounting lives here and nowhere else.

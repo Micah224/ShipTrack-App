@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hashPassword, verifyPassword } from './password';
+import { hashPassword, verifyPassword } from './password.ts';
 
 describe('hashPassword', () => {
 	it('produces the documented envelope', async () => {

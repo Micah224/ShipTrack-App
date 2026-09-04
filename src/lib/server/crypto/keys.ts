@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { required } from '../env';
+import { required } from '../env.ts';
 
 /*
  * Licence key format.

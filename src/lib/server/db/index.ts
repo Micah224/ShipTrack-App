@@ -1,7 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { required } from '../env';
-import * as schema from './schema';
+import { required } from '../env.ts';
+import * as schema from './schema.ts';
 
 /*
  * neon-http over the pooled connection string.
