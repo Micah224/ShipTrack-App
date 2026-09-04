@@ -131,6 +131,28 @@ This is where setups go wrong, because all three are "base64-ish":
 `LICENSE_KEY_SECRET` is exactly 32 bytes of standard base64 (44 characters);
 anything else throws `LICENSE_KEY_SECRET must be 32 bytes, base64-encoded.`
 
+### Do not `source .env`
+
+It is a dotenv file, not a shell script, and sourcing it goes wrong quietly.
+Neon connection strings contain `&`, which backgrounds the assignment and
+truncates the URL at the first parameter; `PLUGIN_AUTHOR=ShipTrack Pro`
+contains a space, so the shell tries to run `Pro`. Both of these produce a
+`DATABASE_URL` that looks set and connects to the wrong place — or to a local
+socket that does not exist.
+
+Everything that needs `.env` already loads it properly: the three CLIs via
+`node --env-file-if-exists=.env`, the app via `vite.config.ts`. When you need
+one value in a shell, pull out just that one:
+
+```bash
+DB=$(python3 -c "
+import pathlib
+for l in pathlib.Path('.env').read_text().splitlines():
+    if l.startswith('DATABASE_URL_UNPOOLED='):
+        print(l.split('=',1)[1].strip('\"')); break")
+psql "$DB" -c 'select 1'
+```
+
 ---
 
 ## 2. Paste the public key into the plugin
@@ -245,6 +267,24 @@ The plugin's compiled-in default is `https://ship-track-app.vercel.app`
 If you would rather use a different origin, override it per-site with the
 `shiptrack_pro/license_api_base` filter; the constant is the fallback, not a
 hard requirement.
+
+**Check what the production branch actually contains before blaming the
+environment.** Vercel builds production from one branch, and this repository's
+release path is `feature → develop → main` (enforced by
+`.github/workflows/branch-flow.yml`). If `main` has not yet received a
+`develop → main` merge, production builds whatever `main` holds — and when
+that is a bare scaffold, the build dies with
+
+```
+sh: line 1: vite: command not found
+Error: Command "vite build" exited with 127
+```
+
+which reads like a toolchain problem and is nothing of the sort: there is no
+`package.json` on that commit, so `npm install` installed no `vite`. Setting
+environment variables cannot fix it. Either merge `develop` into `main` (the
+designed path — `backmerge.yml` then keeps `develop` in sync), or point the
+project's production branch elsewhere.
 
 Verify the deployment is answering before you touch a real site:
 
