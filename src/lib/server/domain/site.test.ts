@@ -70,3 +70,48 @@ describe('classifySite', () => {
 		expect(classifySite('https://example.com/staging').environment).toBe('PRODUCTION');
 	});
 });
+
+describe('normalizeDomain rejects things that are not hosts', () => {
+	/*
+	 * Each of these was accepted before, because the regex fallback returns its
+	 * input verbatim when there is no scheme, slash or colon. `classifySite`
+	 * then reported PRODUCTION/countsSeat, so a valid key could burn a real seat
+	 * against a string like "not a url" and have it signed into the token's
+	 * domain claim.
+	 */
+	it.each([
+		['a space-separated phrase', 'not a url'],
+		['several words', 'a b c'],
+		['an underscore host', 'not_a_host'],
+		['a bare scheme', 'javascript:alert(1)'],
+		['an empty host', 'http://'],
+		['a trailing-hyphen label', 'bad-.example.com'],
+		['a leading-hyphen label', '-bad.example.com'],
+		['a label over 63 characters', `${'a'.repeat(64)}.example.com`],
+		['a host over 253 characters', `${'a.'.repeat(200)}example.com`],
+		['a quoted string', '"example.com"'],
+		['a path only', '/wp-admin'],
+		['a single label that is not localhost', 'wordpress']
+	])('refuses %s', (_label, input) => {
+		expect(normalizeDomain(input)).toBe('');
+		expect(classifySite(input).domain).toBe('');
+	});
+
+	it('still accepts the forms real sites send', () => {
+		expect(normalizeDomain('https://example.com/')).toBe('example.com');
+		expect(normalizeDomain('example.com')).toBe('example.com');
+		expect(normalizeDomain('https://WWW.Example.COM.')).toBe('example.com');
+		expect(normalizeDomain('https://sub.example.co.uk:8443/path')).toBe('sub.example.co.uk');
+		expect(normalizeDomain('192.168.1.10')).toBe('192.168.1.10');
+		// Punycoded on the way in, which is what makes the domain the server binds
+		// equal to the one TokenVerifier::normalizeHost computes plugin-side.
+		expect(normalizeDomain('münchen-logistik.de')).toBe('xn--mnchen-logistik-zvb.de');
+		expect(normalizeDomain('xn--mnchen-logistik-zvb.de')).toBe('xn--mnchen-logistik-zvb.de');
+		expect(normalizeDomain('localhost')).toBe('localhost');
+	});
+
+	it('does not silently turn a scheme-relative URL into its host', () => {
+		// `//evil.com` used to normalise to `evil.com`; it is not a site URL.
+		expect(normalizeDomain('//evil.com')).toBe('evil.com');
+	});
+});

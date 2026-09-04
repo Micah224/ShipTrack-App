@@ -57,6 +57,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const site = classifySite(siteUrl);
+	if (!site.domain) {
+		return fail(refusal('invalid_request', 'site_url did not contain a usable host.', 400));
+	}
+
 	const { token, hash } = generateDownloadToken();
 	const ttlMinutes = optionalNumber('DOWNLOAD_TOKEN_TTL_MINUTES', 15);
 

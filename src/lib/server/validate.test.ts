@@ -66,3 +66,37 @@ describe('optionalStrArray', () => {
 		expect(optionalStrArray({ transport_modes: huge }, 'transport_modes')).toHaveLength(32);
 	});
 });
+
+describe('optionalStrArray bounds the blob, not just the count', () => {
+	it('refuses an entry longer than itemMax', () => {
+		const body = { modes: ['road', 'x'.repeat(65)] };
+		expect(() => optionalStrArray(body, 'modes')).toThrow(InvalidField);
+		expect(() => optionalStrArray(body, 'modes')).toThrow(/modes\[1\] must be at most 64/);
+	});
+
+	it('refuses the payload that measured 3.2 MB in one activation row', () => {
+		// 32 entries is within the count cap, so only a per-entry bound stops this.
+		const body = { modes: Array.from({ length: 32 }, () => 'r'.repeat(100_000)) };
+		expect(() => optionalStrArray(body, 'modes')).toThrow(InvalidField);
+	});
+
+	it('still accepts real transport modes', () => {
+		expect(optionalStrArray({ modes: ['road', 'rail', 'sea', 'air'] }, 'modes')).toEqual([
+			'road',
+			'rail',
+			'sea',
+			'air'
+		]);
+	});
+
+	it('reports the index of the first oversized entry', () => {
+		const body = { modes: ['road', 'rail', 'y'.repeat(100)] };
+		expect(() => optionalStrArray(body, 'modes')).toThrow(/modes\[2\]/);
+	});
+
+	it('applies the count cap before the length check, as documented', () => {
+		// The 33rd entry is sliced away, so its length is irrelevant.
+		const body = { modes: [...Array.from({ length: 32 }, () => 'road'), 'z'.repeat(500)] };
+		expect(optionalStrArray(body, 'modes')).toHaveLength(32);
+	});
+});
