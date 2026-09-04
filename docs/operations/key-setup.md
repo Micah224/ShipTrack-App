@@ -56,14 +56,23 @@ Once, on a machine you trust. The private key never leaves Vercel afterwards.
 npm run keys:generate
 ```
 
-One run prints six blocks:
+One run prints the whole set — note the private key appears **twice**, in the
+two forms that are each correct in exactly one place:
 
 ```
 # Key id
 ED25519_KEY_ID=stp-2026i
 
-# Vercel environment variable (keep secret)
+# Private key for .env (keep secret). The quotes and the escaped newlines are
+# load-bearing here: dotenv unescapes them back into a real PEM.
 ED25519_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMC4C…\n-----END PRIVATE KEY-----"
+
+# Private key for Vercel (keep secret). Vercel stores values verbatim and
+# unescapes nothing, so paste THIS form — real line breaks, no quotes.
+# The escaped form above fails there with 'DECODER routines::unsupported'.
+-----BEGIN PRIVATE KEY-----
+MC4C…
+-----END PRIVATE KEY-----
 
 # Paste into TokenVerifier::PUBLIC_KEYS in the plugin (app/Licensing/TokenVerifier.php).
 # Copy the whole line: the key id above and this key are one pair, and a key
@@ -101,10 +110,18 @@ file: `shred -u keygen.out` (or `rm -P`, or just `rm` — it held the private ke
 This is where setups go wrong, because all three are "base64-ish":
 
 - **`ED25519_PRIVATE_KEY`** — PKCS#8 **PEM**, printed with real newlines
-  replaced by literal `\n` and the whole value wrapped in double quotes. The
-  quotes are load-bearing: dotenv unescapes `\n` inside them. Paste it unquoted,
-  or into a UI field that does not unescape, and `crypto.createPrivateKey`
-  rejects it.
+  replaced by literal `\n` and the whole value wrapped in double quotes. That
+  form is for `.env` **only**, where the quotes are load-bearing: both Node's
+  `--env-file` and Vite's `loadEnv` unescape `\n` inside double quotes, and
+  `crypto.createPrivateKey` then sees a real PEM.
+
+  **Vercel is different.** Environment variables there are stored verbatim —
+  nothing unescapes anything — so paste the *real multi-line PEM* into the
+  value box, with actual line breaks and no surrounding quotes. Reconstruct it
+  from the printed line by dropping the quotes and turning each `\n` back into
+  a newline, or take the PEM straight from `keygen.out`. Paste the escaped form
+  and every signing attempt fails with
+  `error:1E08010C:DECODER routines::unsupported`, which names nothing useful.
 - **the plugin constant** — standard base64 of the **raw 32 bytes**, *with* `=`
   padding (`SODIUM_BASE64_VARIANT_ORIGINAL`). Not PEM. Not base64url. A PEM blob
   here fails with `bad_public_key`.

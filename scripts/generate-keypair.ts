@@ -31,7 +31,17 @@ if (!crypto.verify(null, probe, publicKey, crypto.sign(null, probe, privateKey))
 const kid = `stp-${new Date().getUTCFullYear()}${String.fromCharCode(97 + new Date().getUTCMonth() % 26)}`;
 
 console.log(`# Key id\nED25519_KEY_ID=${kid}\n`);
-console.log(`# Vercel environment variable (keep secret)\nED25519_PRIVATE_KEY="${privatePem.trimEnd().replace(/\n/g, '\\n')}"\n`);
+console.log(
+	`# Private key for .env (keep secret). The quotes and the escaped newlines are\n` +
+		`# load-bearing here: dotenv unescapes them back into a real PEM.\n` +
+		`ED25519_PRIVATE_KEY="${privatePem.trimEnd().replace(/\n/g, '\\n')}"\n`
+);
+console.log(
+	`# Private key for Vercel (keep secret). Vercel stores values verbatim and\n` +
+		`# unescapes nothing, so paste THIS form — real line breaks, no quotes.\n` +
+		`# The escaped form above fails there with 'DECODER routines::unsupported'.\n` +
+		`${privatePem.trimEnd()}\n`
+);
 console.log(
 	`# Paste into TokenVerifier::PUBLIC_KEYS in the plugin (app/Licensing/TokenVerifier.php).\n` +
 		`# Copy the whole line: the key id above and this key are one pair, and a key\n` +
