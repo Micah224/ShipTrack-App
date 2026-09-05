@@ -249,10 +249,111 @@ All three must be zero. If they are not, stop and work out why. Then run
 DATABASE_URL_UNPOOLED='postgres://…' npm run db:migrate
 ```
 
-The variable has to be exported on that command. Unlike the three operator
-CLIs, `db:migrate` carries no `--env-file-if-exists` and does not go through
-`vite.config.ts`, so it will not pick up `.env` the way the rest of the tooling
-does.
+Export the variable on that command and nothing else. `drizzle-kit` loads
+`.env` from the working directory on its own — measured: with no variable
+exported and only `.env` present, `db:migrate` read the host from `.env` and
+tried to migrate it — and `drizzle.config.ts` prefers `DATABASE_URL_UNPOOLED`
+over `DATABASE_URL`. So an empty `DATABASE_URL` beside a stale
+`DATABASE_URL_UNPOOLED` in `.env` migrates the stale host, exits 1 without a
+word if that host is gone, and looks like nothing happened. An exported
+variable wins over `.env`; that is the only reason to insist on it.
+
+Never conclude a migration ran from the exit code. Confirm it:
+
+```sql
+SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at;
+```
+
+The hashes are `sha256sum drizzle/*.sql`. Anything else — fewer rows, a hash
+that matches no file, `schema "drizzle" does not exist` — means the branch you
+are looking at is not the one you migrated.
+
+### Migrate the database Vercel connects to — and know whose account it is in
+
+This is the step that went wrong here, and it went wrong in a way the previous
+version of this section did not anticipate, so it is written out in full.
+
+Vercel's **Storage** tab can provision a Neon database in one click. That
+database is created in a Neon organisation *owned by Vercel* — it does not
+appear in your own Neon console, it is not reachable by your own Neon API key,
+and it lands in whatever region Vercel picks. The integration then injects
+`DATABASE_URL` (and siblings) into the project as **one variable row scoped to
+Production, Preview and Development together**.
+
+What that produced: the migration ran against this project's `production`
+branch (`shy-haze-51728838` / `br-bold-shape-zaf34x88`, `eu-west-2`), while
+`DATABASE_URL` named a Vercel-provisioned database in `eu-central-1` that
+nobody had ever migrated. Every request connected, authenticated, and failed
+with `relation "licenses" does not exist`. From outside it read as a credential
+problem for most of a day, because drizzle's `Failed query:` wrapper hides the
+reason — see section 9.
+
+Check **identity**, not hostname shape. The string in Vercel must resolve to:
+
+| Field | Expected |
+| --- | --- |
+| organisation | `org-royal-water-38453197` ("Ship Rack") |
+| project | `shy-haze-51728838` ("ShipTrack Pro") |
+| branch | `br-bold-shape-zaf34x88` ("production", the default) |
+| host | `ep-gentle-glade-zaced2ip` — pooled (`…-pooler.c-2.eu-west-2…`) or direct; the HTTP driver accepts either |
+| database / role | `neondb` / `neondb_owner` |
+
+Any host that is not `ep-gentle-glade-zaced2ip` is the wrong database,
+whatever region it is in. To set it:
+
+1. **Vercel → project → Storage.** If a Neon database is listed, open its data
+   browser and confirm it has no tables you care about. Then **disconnect it
+   from this project** (it can also be deleted afterwards). Do this *before*
+   touching `DATABASE_URL`: an integration-owned variable is re-injected on the
+   next resource sync, silently undoing a hand edit days later.
+2. Confirm `DATABASE_URL` is gone from every environment. If a hand-set row
+   remains that covers more than one environment, delete it — Vercel edits a
+   row, not a cell, so "changing Production" changes Preview too.
+3. Add `DATABASE_URL` for **Production only**, copied from Neon → Ship Rack →
+   ShipTrack Pro → `production` → Connect. Leave Preview unset for now: a
+   preview that throws `Missing required environment variable: DATABASE_URL`
+   is a loud failure, which beats a preview quietly writing to the wrong place.
+   Give previews a migrated `develop` branch when you are ready.
+4. Redeploy Production. Variables are captured per deployment.
+
+Never run `vercel env pull` inside this checkout. It writes `.env.local`,
+which `vite.config.ts` ranks above `.env`, and aimed at `.env` it overwrites
+the only copy of `ED25519_PRIVATE_KEY`.
+
+Then close the loop from outside, against the deployed function:
+
+```bash
+# Needs no secret, works from a browser, proves download_tokens + releases resolve.
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://ship-track-app.vercel.app/api/v1/updates/download/verify-not-a-token
+# expect 404 (body {"ok":false,"code":"invalid_token",...}); a 500 is the wrong database.
+
+# Proves licenses + rate_counters resolve. All three fields are required.
+curl -s -X POST https://ship-track-app.vercel.app/api/v1/updates/check \
+  -H 'content-type: application/json' \
+  -d '{"key":"nope","site_url":"https://example.com","version":"0.0.0"}'
+# expect 404 {"ok":false,"code":"unknown_key",...}
+```
+
+Read the second one carefully: a **400** `invalid_request` means the payload was
+malformed and the database was never queried, so it proves nothing. A **429**
+on a repeat is the miss-bucket rate limiter — it proves `rate_counters` is
+writable, so it counts as a pass.
+
+`unknown_key` proves the connection, not the product. Two more steps before
+calling it done:
+
+- **Repopulate `releases`.** A release published while the database was wrong
+  uploaded its zip to R2 and then failed the insert, so the table is empty and
+  every site is told `update_available: false`. GitHub → ShipTrack-Pro →
+  Settings → Webhooks → Recent Deliveries → redeliver the `release` /
+  `published` event. The handler upserts on `version`, so this is safe to
+  repeat. Confirm with `SELECT version FROM releases;`.
+- **Run one real check.** Mint a licence (section 6) and post it with a lower
+  `version`; the response must name the release. That is the acceptance test.
+
+Re-run both probes after the *next* deployment of any commit. If an
+integration still owns the variable, that is when its value comes back.
 
 ---
 
@@ -500,6 +601,8 @@ Other codes you will see, from layers above the verifier:
 | `decryption_failed` | The stored key or token cannot be decrypted — WordPress salts were regenerated. Re-enter the key. |
 | `not_configured` | `ADMIN_EMAIL` or `ADMIN_PASSWORD_HASH` is blank. |
 | `rate_limited` | Ten failed admin logins from one address in fifteen minutes. The correct password is refused too until the window passes. |
+| `relation "…" does not exist` | In the log, under a drizzle `Failed query`. `DATABASE_URL` names a database the migration never ran on — here, one provisioned from Vercel's Storage tab into a Neon account that is not yours. Section 4. |
+| `column "…" does not exist` | The same fault on a table that predates the current schema, so it exists but has the wrong shape. Reads as a working connection, which is what makes it slow to spot. |
 
 ---
 
