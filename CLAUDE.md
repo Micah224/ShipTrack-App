@@ -58,6 +58,17 @@ write and truncate. Never point them at production.
   bucket/subject pairs in one multi-row insert raise `ON CONFLICT DO UPDATE
   command cannot affect row a second time`, which is why `limits.ts` asserts
   distinctness before issuing the statement.
+- **A green `npm run build` does not mean the deployment runs.** Dependencies
+  left external are only imports in the output; whether they resolve is decided
+  by Vercel's loader, which — unlike local Node 22 — cannot `require()` an ES
+  module. `sanitize-html` is CommonJS and requires `htmlparser2`, ESM-only since
+  v12, so the admin console and the release webhook answered 500 with
+  `ERR_REQUIRE_ESM` while lint, typecheck, test and build were all green. Both
+  are in `ssr.noExternal` now — and both had to be, since bundling only the
+  parent leaves the child external and Rolldown re-emits the `require()` one
+  layer down. `npm run verify:bundle` imports every emitted chunk under
+  `--no-experimental-require-module` and is part of `check` and of CI.
+
 - **Relative imports under `src/lib/server/` must carry the `.ts` extension.**
   Vite resolves extensionless specifiers; Node's ESM loader does not, and the
   `scripts/*.ts` CLIs run under bare Node. `license:mint` died on
