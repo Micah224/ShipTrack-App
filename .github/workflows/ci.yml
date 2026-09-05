@@ -96,3 +96,13 @@ jobs:
       # separate bundling step to run, unlike the OpenNext setup this replaced.
       - name: Build
         run: npm run build
+
+      # A build proves the bundle can be written, not that it can be run. This
+      # imports every emitted server chunk under bare Node with require-of-ESM
+      # switched off -- the loader Vercel actually uses -- and fails on a
+      # dependency that only resolves through Vite. Added after a CommonJS
+      # sanitize-html requiring an ESM-only htmlparser2 shipped a 500 to the
+      # whole admin console and the release webhook, green through lint,
+      # typecheck, test and build alike.
+      - name: Verify the bundle loads
+        run: npm run verify:bundle
