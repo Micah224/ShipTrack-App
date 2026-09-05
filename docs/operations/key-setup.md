@@ -268,7 +268,7 @@ The hashes are `sha256sum drizzle/*.sql`. Anything else — fewer rows, a hash
 that matches no file, `schema "drizzle" does not exist` — means the branch you
 are looking at is not the one you migrated.
 
-### Migrate the database Vercel connects to — and know whose account it is in
+### Know which database Vercel connects to — and whose account it is in
 
 This is the step that went wrong here, and it went wrong in a way the previous
 version of this section did not anticipate, so it is written out in full.
@@ -280,41 +280,74 @@ and it lands in whatever region Vercel picks. The integration then injects
 `DATABASE_URL` (and siblings) into the project as **one variable row scoped to
 Production, Preview and Development together**.
 
-What that produced: the migration ran against this project's `production`
-branch (`shy-haze-51728838` / `br-bold-shape-zaf34x88`, `eu-west-2`), while
-`DATABASE_URL` named a Vercel-provisioned database in `eu-central-1` that
+What that produced: the migration ran against the operator's own project
+(`shy-haze-51728838` / `br-bold-shape-zaf34x88`, `eu-west-2`), while
+`DATABASE_URL` named the Vercel-provisioned database in `eu-central-1` that
 nobody had ever migrated. Every request connected, authenticated, and failed
 with `relation "licenses" does not exist`. From outside it read as a credential
 problem for most of a day, because drizzle's `Failed query:` wrapper hides the
 reason — see section 9.
 
+**Resolution, 2026-09-05:** the Vercel-provisioned database was migrated in
+place and is production. The operator's own `ShipTrack Pro` project is
+migrated, empty, and unused by any deployment. Do not repoint at it.
+
 Check **identity**, not hostname shape. The string in Vercel must resolve to:
 
 | Field | Expected |
 | --- | --- |
-| organisation | `org-royal-water-38453197` ("Ship Rack") |
-| project | `shy-haze-51728838` ("ShipTrack Pro") |
-| branch | `br-bold-shape-zaf34x88` ("production", the default) |
-| host | `ep-gentle-glade-zaced2ip` — pooled (`…-pooler.c-2.eu-west-2…`) or direct; the HTTP driver accepts either |
+| organisation | `Vercel: micah224's projects` — created by the integration. Visible only after **Open in Neon** from the Storage panel, and only to the Neon login that clicked it |
+| project | the one project in that organisation |
+| host | `ep-curly-credit-b24zg4c3` — pooled (`…-pooler.c-6.eu-central-1.aws.neon.tech`) or direct; the HTTP driver accepts either |
 | database / role | `neondb` / `neondb_owner` |
 
-Any host that is not `ep-gentle-glade-zaced2ip` is the wrong database,
-whatever region it is in. To set it:
+Any host that is not `ep-curly-credit-b24zg4c3` is the wrong database. In
+particular `ep-gentle-glade-zaced2ip` — the `ShipTrack Pro` project in
+`eu-west-2` — is the one that *looks* right in your own Neon console and is not
+production.
 
-1. **Vercel → project → Storage.** If a Neon database is listed, open its data
-   browser and confirm it has no tables you care about. Then **disconnect it
-   from this project** (it can also be deleted afterwards). Do this *before*
-   touching `DATABASE_URL`: an integration-owned variable is re-injected on the
-   next resource sync, silently undoing a hand edit days later.
-2. Confirm `DATABASE_URL` is gone from every environment. If a hand-set row
-   remains that covers more than one environment, delete it — Vercel edits a
-   row, not a cell, so "changing Production" changes Preview too.
-3. Add `DATABASE_URL` for **Production only**, copied from Neon → Ship Rack →
-   ShipTrack Pro → `production` → Connect. Leave Preview unset for now: a
-   preview that throws `Missing required environment variable: DATABASE_URL`
-   is a loud failure, which beats a preview quietly writing to the wrong place.
-   Give previews a migrated `develop` branch when you are ready.
-4. Redeploy Production. Variables are captured per deployment.
+### Migrating the Storage-tab database
+
+The integration keeps `DATABASE_URL` correct on its own; what it never does is
+run migrations. Two ways, by whether you hold the password:
+
+- **With the password** (Vercel → Storage → the database → the parameters
+  panel, `PGPASSWORD`), from a checkout of this repo:
+
+  ```bash
+  DATABASE_URL_UNPOOLED='postgres://neondb_owner:<PGPASSWORD>@ep-curly-credit-b24zg4c3.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require' npm run db:migrate
+  ```
+
+- **Without it**, from the Neon SQL Editor (Storage → **Open in Neon**): paste
+  one transaction containing every `drizzle/*.sql` with its
+  `--> statement-breakpoint` lines removed, followed by drizzle's own
+  bookkeeping so a later `db:migrate` knows what is applied:
+
+  ```sql
+  CREATE SCHEMA IF NOT EXISTS "drizzle";
+  CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations"
+    (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint);
+  INSERT INTO "drizzle"."__drizzle_migrations" ("hash", "created_at") VALUES
+    ('<sha256sum of the file>', <the "when" from drizzle/meta/_journal.json>);
+  ```
+
+  One row per migration file. `drizzle-kit migrate` applies any journal entry
+  whose `when` is newer than the newest `created_at` it finds, so a wrong
+  timestamp here means a migration re-applied, or skipped, later.
+
+Either way, confirm afterwards with the two queries at the top of this section:
+`drizzle.__drizzle_migrations` holds one row per file with matching hashes,
+and `information_schema.tables` lists all seven tables. No redeploy is needed —
+`DATABASE_URL` did not change.
+
+Point the CLIs at the same database: `DATABASE_URL_UNPOOLED` in `.env` is the
+`PGHOST_UNPOOLED` string from that Storage panel. `license:mint` writes
+wherever it points, and a licence minted into the `ShipTrack Pro` project is
+one no customer site will ever find.
+
+Previews: the Neon integration can branch the database per preview deployment
+(Storage → the database → settings). Branches created *after* the migration
+carry the schema; any created before it are as empty as production was.
 
 Never run `vercel env pull` inside this checkout. It writes `.env.local`,
 which `vite.config.ts` ranks above `.env`, and aimed at `.env` it overwrites
