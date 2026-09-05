@@ -286,27 +286,38 @@ environment variables cannot fix it. Either merge `develop` into `main` (the
 designed path — `backmerge.yml` then keeps `develop` in sync), or point the
 project's production branch elsewhere.
 
-**Turn off Vercel Authentication for whatever origin customers use.** This is
-the one that will not announce itself. Deployment Protection defaults to
-*Standard Protection* — `ssoProtection: all_except_custom_domains` — which
-protects every `*.vercel.app` URL including the production one, and exempts
-only a real custom domain. A protected origin answers **every** request, the
-licence API included, with a 302 to `vercel.com/sso-api`. In a browser you are
-logged in and see nothing wrong; from a WordPress site there is no session, so
-`wp_remote_post` follows nothing (`LicenseClient` sets `redirection => 0`) and
-every activation fails with `transport_error` — a code that points at the
-network, not at a setting.
+**Check the hostname customers actually use — and do not "fix" Deployment
+Protection.** This section previously told you the opposite, and was wrong; the
+correction matters because the advice it gave weakened preview protection for
+no benefit.
 
-So pick one, in Settings → Deployment Protection:
+Deployment Protection is on for this project, as *Standard Protection*
+(`ssoProtection: all_except_custom_domains`), and should stay on. What is easy
+to get wrong is which hostnames that actually covers. Measured against the live
+project, with SSO enabled the whole time:
 
-- attach a real custom domain (`licence.example.com`), which Standard
-  Protection exempts, and point the plugin at it via `PUBLIC_APP_URL` and the
-  `shiptrack_pro/license_api_base` filter; or
-- set Vercel Authentication to **Only Preview Deployments**, which leaves the
-  production `*.vercel.app` origin public — what the compiled-in
-  `LicenseClient::DEFAULT_BASE` expects.
+| Hostname | Answer |
+| --- | --- |
+| `ship-track-app.vercel.app` — the short project alias | **200** |
+| `ship-track-app-micah224s-projects.vercel.app` | 302 → `vercel.com/sso-api` |
+| `ship-track-app-git-<branch>-micah224s-projects.vercel.app` | 302 → `vercel.com/sso-api` |
+| `ship-track-<hash>-micah224s-projects.vercel.app` | 302 → `vercel.com/sso-api` |
 
-Verify the deployment is answering before you touch a real site:
+So `all_except_custom_domains` does **not** mean "everything but a custom
+domain". The short, project-name `.vercel.app` alias is served unprotected; the
+team-scoped `*-<team>.vercel.app` hostnames are the protected ones. That short
+alias is exactly what the plugin's compiled-in `LicenseClient::DEFAULT_BASE`
+points at, so the licence API is reachable from customer sites with protection
+left fully on.
+
+The practical trap is therefore not the setting but the probe. Vercel's
+dashboard links the per-deployment and branch URLs, so those are the ones you
+naturally paste into `curl` — and they answer 302 whether or not anything is
+wrong. Concluding "production is behind SSO" from one of those, and switching
+Vercel Authentication to *Only Preview Deployments* to fix it, exposes every
+preview deployment to the internet to solve a problem that does not exist.
+
+Verify against the origin the plugin will really call:
 
 ```bash
 curl -i https://ship-track-app.vercel.app/api/v1/heartbeat
@@ -314,11 +325,27 @@ curl -i https://ship-track-app.vercel.app/api/v1/heartbeat
 # {"ok":true,"service":"shiptrack-licence","ready":true}
 ```
 
-Read the status line, not just the body. A `DEPLOYMENT_NOT_FOUND` body means
-the domain is attached to no production deployment. A **302 to
-`vercel.com/sso-api`** means Deployment Protection is still on and no customer
-site can reach you — that is the failure this section exists to stop you
-shipping.
+Read the status line, not just the body:
+
+- **200** — good.
+- **`DEPLOYMENT_NOT_FOUND`** in the body — the domain is attached to no
+  production deployment.
+- **302 to `vercel.com/sso-api`** *on this host* — that would be a real
+  problem, and a different one from the 302s in the table above. It means the
+  short alias is no longer exempt, and no customer site could reach you.
+
+That last case is worth recognising because of how it fails downstream rather
+than how it looks here. `LicenseClient` sends `redirection => 0`, so
+`wp_remote_post` does not follow the redirect; activation returns
+`transport_error`, a code that points at the network rather than at a
+dashboard setting. In a browser you would be logged into Vercel and see nothing
+wrong at all.
+
+If you do decide to attach a real custom domain (`licence.example.com`),
+Standard Protection exempts it, and you would point the plugin at it via
+`PUBLIC_APP_URL` and the `shiptrack_pro/license_api_base` filter. That is a
+choice about branding and about not depending on a `.vercel.app` alias — not a
+remedy for a protection problem.
 
 ---
 
