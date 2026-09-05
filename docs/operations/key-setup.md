@@ -254,6 +254,41 @@ CLIs, `db:migrate` carries no `--env-file-if-exists` and does not go through
 `vite.config.ts`, so it will not pick up `.env` the way the rest of the tooling
 does.
 
+### Migrate the branch Vercel connects to, not the one you have open
+
+A Neon project holds several branches, each with its own endpoint hostname and
+its own schema. Migrating one leaves the others exactly as they were, and
+nothing warns you: `db:migrate` succeeds against whichever branch its URL names.
+
+That is not hypothetical. This project ran the reset and the migration against
+`production` while Vercel's `DATABASE_URL` still named `develop`, and the
+result was a deployment that connected happily and failed every query — for
+weeks, because a stale branch is indistinguishable from a healthy one until
+something reads a table the old schema did not have.
+
+So compare the endpoint before you migrate and again after you set the Vercel
+variable. Both must be the same:
+
+```bash
+# Neon console -> Branches -> the branch you are migrating -> Connect
+# Vercel -> Settings -> Environment Variables -> DATABASE_URL, Production
+```
+
+Then close the loop from outside, against the deployed function rather than
+against a connection string:
+
+```bash
+curl -s -X POST https://ship-track-app.vercel.app/api/v1/updates/check \
+  -H 'content-type: application/json' \
+  -d '{"key":"nope","site_url":"https://example.com","version":"0.0.0"}'
+```
+
+`{"error":{"code":"unknown_key",...}}` means the query ran and found nothing,
+which is the pass. A 500 means the branch behind `DATABASE_URL` is not the one
+you migrated. Every preview environment needs the same treatment separately:
+previews get their own `DATABASE_URL`, so a migrated production branch says
+nothing about them.
+
 ---
 
 ## 5. Vercel
@@ -500,6 +535,8 @@ Other codes you will see, from layers above the verifier:
 | `decryption_failed` | The stored key or token cannot be decrypted — WordPress salts were regenerated. Re-enter the key. |
 | `not_configured` | `ADMIN_EMAIL` or `ADMIN_PASSWORD_HASH` is blank. |
 | `rate_limited` | Ten failed admin logins from one address in fifteen minutes. The correct password is refused too until the window passes. |
+| `relation "…" does not exist` | In the log, under a drizzle `Failed query`. `DATABASE_URL` names a Neon branch the migration never ran on. Section 4. |
+| `column "…" does not exist` | The same fault on a table that predates the current schema, so it exists but has the wrong shape. Reads as a working connection, which is what makes it slow to spot. |
 
 ---
 
