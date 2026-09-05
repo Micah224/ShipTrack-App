@@ -1,4 +1,4 @@
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { readSession, SESSION_COOKIE } from '$lib/server/admin/jwt';
 import { readPortalSession, PORTAL_COOKIE } from '$lib/server/portal/session';
 
@@ -52,4 +52,44 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	return resolve(event);
+};
+
+/**
+ * Logs the whole cause chain, not just the outermost error.
+ *
+ * Drizzle wraps every failure as `Failed query: <sql>`, and the reason it
+ * failed — `password authentication failed`, `relation does not exist`, a
+ * fetch that never left the function — lives in `error.cause`. SvelteKit's
+ * default handler logs the error object, and Vercel's log viewer renders its
+ * message and stack and nothing else, so the cause is never written down
+ * anywhere.
+ *
+ * That is not a cosmetic gap. A release that uploaded to R2 and then died on
+ * the insert produced a 500 indistinguishable from a 500 caused by a stale
+ * connection string, and the difference between those two — which is the whole
+ * diagnosis — was the one field being dropped.
+ *
+ * The response body is unchanged: `message` is SvelteKit's own generic text,
+ * and the detail belongs in the log, not in an answer to an untrusted caller.
+ */
+export const handleError: HandleServerError = ({ error, event, status, message }) => {
+	const chain: string[] = [];
+	let current: unknown = error;
+	// Bounded rather than while-truthy: `cause` can be made to point at itself.
+	for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+		chain.push(`${current.name}: ${current.message}`);
+		current = current.cause;
+	}
+	if (chain.length === 0) chain.push(String(error));
+
+	const detail = chain
+		.map((line, index) => (index === 0 ? line : `${'  '.repeat(index)}caused by ${line}`))
+		.join('\n');
+
+	console.error(
+		`[${status}] ${event.request.method} ${event.url.pathname}\n${detail}`,
+		error instanceof Error ? error.stack : ''
+	);
+
+	return { message };
 };
