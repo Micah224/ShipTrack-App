@@ -1,6 +1,6 @@
 name: branch-flow
 
-# Enforces the one release path: feature -> develop -> main.
+# Enforces two long-lived branches and one release path: feature -> develop -> main.
 #
 # WHY THIS EXISTS
 #   Ported from the ShipTrack Pro plugin repository, where these checks were
@@ -13,26 +13,56 @@ name: branch-flow
 #   untangling it afterwards, which is the whole reason this file exists on day
 #   one rather than after the first incident.
 #
+# THE TWO RULES, AND WHY EACH NEEDS ITS OWN JOB
+#   1. Only `main` and `develop` are long-lived. `base-branch` enforces that by
+#      refusing any PR aimed at a third branch — a long-lived branch is created
+#      by someone merging into it, so refusing the merge is what prevents it.
+#   2. Everything reaches main through develop. `source-branch` enforces that.
+#
+#   Neither implies the other: rule 1 without rule 2 permits a feature branch
+#   straight into main, and rule 2 without rule 1 permits `release/x` to quietly
+#   become a third trunk that nothing checks.
+#
 # Runs on `edited` as well, so retargeting a PR re-checks it — a plain retarget
 # does NOT re-trigger ci.yml, which defaults to [opened, synchronize, reopened].
 
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
-    branches: [main]
+    # Deliberately unfiltered. A `branches:` filter here would list the bases to
+    # check, and the whole point of `base-branch` is to catch a base that is not
+    # on the list — a filtered trigger simply would not fire for it.
 
 # Permissions are declared per job, not here: only main-not-ahead checks out the
-# repository. The other two read the event payload and need no token scope at
-# all, and granting them one workflow-wide would be handing out access nothing uses.
+# repository. The others read the event payload and need no token scope at all,
+# and granting them one workflow-wide would be handing out access nothing uses.
 
 concurrency:
   group: branch-flow-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  base-branch:
+    name: PR targets main or develop
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$BASE_REF" == "main" || "$BASE_REF" == "develop" ]]; then
+            echo "base '$BASE_REF' is one of the two long-lived branches."
+            exit 0
+          fi
+          echo "::error title=Third long-lived branch::This PR targets '$BASE_REF'. Only 'main' and 'develop' are long-lived here; merging into anything else starts a third trunk that no other check in this workflow protects. Retarget to develop."
+          exit 1
+
   source-branch:
     name: PR into main comes from develop
     runs-on: ubuntu-latest
+    if: github.event.pull_request.base.ref == 'main'
     permissions: {}
     steps:
       - name: Check the head branch
@@ -40,17 +70,26 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          if [[ "$HEAD_REF" == "develop" || "$HEAD_REF" == hotfix/* ]]; then
+          if [[ "$HEAD_REF" == "develop" ]]; then
             echo "head '$HEAD_REF' may target main."
             exit 0
           fi
-          echo "::error title=Wrong base branch::'$HEAD_REF' cannot target main. Feature work goes to develop; only 'develop' or a 'hotfix/*' branch may target main. Retarget this PR to develop."
+          # There is deliberately no hotfix escape hatch. An urgent fix still
+          # goes through develop: it is one extra merge, it takes a minute, and
+          # it keeps `main` a branch whose contents are always a superset of
+          # develop's. The escape hatch is what turns "two branches" into
+          # "two branches plus whatever shipped at 3am", and main-not-ahead
+          # would then block the next ordinary release until someone
+          # back-merged by hand.
+          echo "::error title=Wrong base branch::'$HEAD_REF' cannot target main. Everything reaches main through develop — retarget this PR to develop, then open develop -> main."
           exit 1
 
   no-squash-reminder:
     name: develop into main must be a merge commit
     runs-on: ubuntu-latest
-    if: github.event.pull_request.head.ref == 'develop'
+    if: >-
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'develop'
     permissions: {}
     steps:
       # Advisory only — GitHub decides the merge method at merge time, so a check
@@ -64,6 +103,7 @@ jobs:
   main-not-ahead:
     name: main is not ahead of develop
     runs-on: ubuntu-latest
+    if: github.event.pull_request.base.ref == 'main'
     permissions:
       contents: read
     steps:

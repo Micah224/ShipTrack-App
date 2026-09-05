@@ -5,8 +5,9 @@ import { activations } from '$lib/server/db/schema';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
 import { findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
 import { countSeats, findActivation } from '$lib/server/domain/seats';
+import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
-import { clientIp, fail, ok, readJson } from '$lib/server/http';
+import { clientIp, fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
 import { latestRelease } from '$lib/server/domain/releases';
 import { InvalidField, optionalStr, optionalStrArray, str } from '$lib/server/validate';
 
@@ -50,7 +51,22 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const license = await findLicenseByKey(key);
 	if (!license) {
+		/*
+		 * Metered only after the lookup failed. A per-key bucket here would hand an
+		 * enumerator a fresh budget per guess, so the miss path gets the one global
+		 * bucket instead — safe because no resolved licence ever reaches it.
+		 */
+		const missLimit = await meterMiss();
+		if (missLimit.limited) return limited(missLimit, 'Too many requests. Try again in a moment.');
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
+	}
+
+	const rate = await meterLicense('heartbeat', license, installId);
+	if (rate.limited) {
+		return limited(
+			rate,
+			'This licence is sending requests faster than expected. It will resume automatically.'
+		);
 	}
 
 	const activation = await findActivation(license.id, installId);
@@ -113,7 +129,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		refused: denied?.code ?? null,
 		seats: { used, total: license.maxSeats },
 		latest_version: release?.version ?? null
-	});
+	}, 200, rateLimitHeaders(rate));
 };
 
 /** Liveness for uptime checks; deliberately says nothing about any licence. */

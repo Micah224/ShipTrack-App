@@ -7,15 +7,23 @@ name: ci
 # publishing to the same project, with the winner decided by whichever finishes
 # last. So Vercel owns CD, Actions owns CI, and neither duplicates the other.
 #
-# Deliberately NOT triggered on push to main: a merge into main carries a tree
-# that already passed as a PR, and Vercel rebuilds it anyway. Skipping that
-# saves a full duplicate run per merge, which matters on a private repo where
-# Actions minutes are metered.
+# Triggered on push to BOTH long-lived branches, which reverses an earlier
+# decision here. The old reasoning was that a merge into main carries a tree
+# that already passed as a PR, so re-running was a duplicate. That holds for a
+# clean merge, where the merge commit's tree is identical to develop's — but not
+# for a conflicted one, where the resolution produces a tree that no PR ever
+# tested. And Vercel does not close the gap: it builds, it does not run ESLint,
+# typecheck or the test suite. So the one case where main's tree is genuinely
+# novel is exactly the case that was going unverified straight into production.
+#
+# The cost is one extra run per release, and releases are rare.
 on:
   pull_request:
+    # Only the two long-lived branches take PRs; branch-flow.yml refuses a PR
+    # aimed anywhere else, so there is no third base for this list to cover.
     branches: [main, develop]
   push:
-    branches: [develop]
+    branches: [main, develop]
     paths-ignore:
       - '**.md'
       - 'docs/**'

@@ -6,6 +6,7 @@ import {
 	jsonb,
 	pgEnum,
 	pgTable,
+	primaryKey,
 	text,
 	timestamp,
 	uniqueIndex,
@@ -242,9 +243,60 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 	license: one(licenses, { fields: [auditLogs.licenseId], references: [licenses.id] })
 }));
 
+/**
+ * Fixed-window counters for the licence API's rate limits.
+ *
+ * WHAT IS COUNTED, AND WHAT IS NOT
+ *   `subject` is never a value the caller chose. For the licence buckets it is
+ *   `licenses.key_hash`, which `normalizeLicenseKey` has already canonicalised,
+ *   so re-casing or re-punctuating a key cannot mint a second budget. For the
+ *   unknown-key bucket it is a server constant. The one caller-derived subject,
+ *   `inst:v1`, is a courtesy that bounds one bad install's blast radius, not a
+ *   control — an attacker rotates `install_id` freely and lands on the licence
+ *   bucket, which is the control. That distinction is not academic: this project
+ *   shipped an admin login throttle keyed on the caller's own X-Forwarded-For,
+ *   and changing one character of it restored a full budget.
+ */
+export const rateCounters = pgTable(
+	'rate_counters',
+	{
+		/** Which limit fired: 'lic:activate', 'lic:heartbeat', 'miss:v1', … */
+		bucket: text('bucket').notNull(),
+		/** Who is counted. See the table docblock — never caller-chosen. */
+		subject: text('subject').notNull(),
+		/*
+		 * Binned by Postgres, via `date_bin` against the epoch. The application
+		 * never computes a boundary: serverless instances do not share a clock,
+		 * and two of them disagreeing near a boundary would write two rows and
+		 * silently double the limit. The database is one clock by construction.
+		 */
+		windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+		/*
+		 * Derivable from `bucket`, stored anyway so an operator can reconstruct
+		 * Retry-After from the row alone while an incident is in progress.
+		 */
+		windowSecs: integer('window_secs').notNull(),
+		hits: integer('hits').default(0).notNull(),
+		firstHitAt: timestamp('first_hit_at', { withTimezone: true }).defaultNow().notNull(),
+		lastHitAt: timestamp('last_hit_at', { withTimezone: true }).defaultNow().notNull()
+	},
+	(table) => [
+		/*
+		 * The natural key IS the primary key, and that is the entire concurrency
+		 * control rather than an optimisation: it forces N racing callers onto
+		 * one tuple instead of letting them insert N rows that never see each
+		 * other. That is precisely the difference between this and the seat
+		 * WHERE-guard that failed roughly one run in three.
+		 */
+		primaryKey({ columns: [table.bucket, table.subject, table.windowStart] }),
+		index('rate_counters_sweep_idx').on(table.windowStart)
+	]
+);
+
 export type Customer = typeof customers.$inferSelect;
 export type License = typeof licenses.$inferSelect;
 export type Activation = typeof activations.$inferSelect;
 export type Release = typeof releases.$inferSelect;
 export type DownloadToken = typeof downloadTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type RateCounter = typeof rateCounters.$inferSelect;

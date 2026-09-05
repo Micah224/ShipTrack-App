@@ -1,7 +1,7 @@
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/db';
-import { activations, auditLogs, downloadTokens } from '$lib/server/db/schema';
+import { activations, auditLogs, downloadTokens, rateCounters } from '$lib/server/db/schema';
 import { reclaimAfterDays } from '$lib/server/domain/licenses';
 import { optional } from '$lib/server/env';
 import { fail, ok } from '$lib/server/http';
@@ -73,9 +73,28 @@ export const GET: RequestHandler = async ({ request }) => {
 		);
 	}
 
+	/*
+	 * 3. Sweep spent rate-limit counters.
+	 *
+	 * Every metered request touches a row here, so this is the fastest-growing
+	 * table in the schema and the one most able to become its own denial of
+	 * service. A window that closed two hours ago can answer no question: the
+	 * longest bucket is an hour, so nothing still consults it.
+	 *
+	 * Deleted rather than aggregated on purpose. The counters exist to make a
+	 * decision inside one window, not to be analytics; the audit log already
+	 * records the transition past a limit, which is the part worth keeping.
+	 */
+	const counterCutoff = new Date(Date.now() - 2 * 3_600_000);
+	const sweptCounters = await db
+		.delete(rateCounters)
+		.where(lt(rateCounters.windowStart, counterCutoff))
+		.returning({ bucket: rateCounters.bucket });
+
 	return ok({
 		purged_tokens: purged.length,
 		reclaimed_seats: reclaimed.length,
+		swept_rate_counters: sweptCounters.length,
 		reclaim_after_days: reclaimAfterDays()
 	});
 };

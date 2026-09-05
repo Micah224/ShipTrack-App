@@ -31,10 +31,11 @@ npm run db:generate # regenerate the migration after a schema change
 npm run keys:generate
 npm run admin:hash
 SEAT_TEST_DATABASE_URL='postgres://...' npx vitest run seats.integration
+SEAT_TEST_DATABASE_URL='postgres://...' npx vitest run limits.integration
 ```
 
-The seat integration tests need a **disposable** Neon branch — they write and
-truncate. Never point them at production.
+The seat and limit integration tests need a **disposable** Neon branch — they
+write and truncate. Never point them at production.
 
 ## Things that have already bitten
 
@@ -49,6 +50,18 @@ truncate. Never point them at production.
   it across; `env.ts` depends on that.
 - **A `WHERE` guard on an INSERT is not atomic** under READ COMMITTED. Seat
   capping is done by ranking and self-release — see `domain/seats.ts`.
+- **The rate counter is atomic only in the `ON CONFLICT DO UPDATE SET hits =
+  rc.hits + 1` form.** The read-then-write spelling `SET hits = (SELECT hits …)
+  + 1` looks equivalent and is one statement, but under contention the subquery
+  sees a snapshot without the conflicting row, returns NULL, and the insert dies
+  on the not-null constraint — a 500, not a loose limit. Two identical
+  bucket/subject pairs in one multi-row insert raise `ON CONFLICT DO UPDATE
+  command cannot affect row a second time`, which is why `limits.ts` asserts
+  distinctness before issuing the statement.
+- **Relative imports under `src/lib/server/` must carry the `.ts` extension.**
+  Vite resolves extensionless specifiers; Node's ESM loader does not, and the
+  `scripts/*.ts` CLIs run under bare Node. `license:mint` died on
+  `ERR_MODULE_NOT_FOUND` for `../env` while the app and the tests were green.
 
 ## Agents
 

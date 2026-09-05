@@ -36,10 +36,17 @@ the plugin branches on that, never on the prose.
 npm install
 cp .env.example .env
 npm run keys:generate      # prints the Ed25519 pair and both secrets
-# paste the output into .env, then add the Neon and R2 credentials
+# copy the NAME=value lines into .env — not the PHP snippet or the PEM block —
+# then add the Neon and R2 credentials
 npm run db:migrate
 npm run dev
 ```
+
+The full walkthrough, including what to do with the public key and how to prove
+the two halves of the pair are actually mated, is
+[docs/operations/key-setup.md](docs/operations/key-setup.md). The plugin cannot
+verify anything until the public key is pasted into `TokenVerifier::PUBLIC_KEYS`
+— it ships empty and fails closed.
 
 Mint a licence to test against:
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { timingSafeEqualString } from './compare';
+import { timingSafeEqualString } from './compare.ts';
 
 describe('timingSafeEqualString', () => {
 	it('matches identical strings', () => {

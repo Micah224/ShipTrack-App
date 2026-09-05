@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { licenseState, stateRefusal } from './licenses';
-import type { License } from '../db/schema';
+import { licenseState, stateRefusal } from './licenses.ts';
+import type { License } from '../db/schema.ts';
 
 function license(overrides: Partial<License> = {}): License {
 	return {

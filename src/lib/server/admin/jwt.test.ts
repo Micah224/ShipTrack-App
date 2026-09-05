@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { issueSession, readSession } from './jwt';
+import { issueSession, readSession } from './jwt.ts';
 
 beforeAll(() => {
 	process.env.ADMIN_JWT_SECRET = 'a'.repeat(48);

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { rawPublicKeyBase64, signLicenseToken, verifyLicenseToken, type LicenseTokenPayload } from './ed25519';
+import { rawPublicKeyBase64, signLicenseToken, verifyLicenseToken, type LicenseTokenPayload } from './ed25519.ts';
 
 let publicPem: string;
 

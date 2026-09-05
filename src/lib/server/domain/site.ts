@@ -12,7 +12,17 @@ export interface SiteIdentity {
  * Lowercased, `www.` stripped, port dropped, trailing dot removed. A bare host
  * is accepted as well as a full URL, because `home_url()` is not the only thing
  * that ever reaches this function.
+ *
+ * Returns '' for anything that is not a host, which is what the callers already
+ * treat as "refuse this request". That empty return is load-bearing: the regex
+ * fallback below returns its input verbatim for a string with no scheme, slash
+ * or colon, so without the final shape check `classifySite('not a url')` yielded
+ * `{domain: 'not a url', environment: 'PRODUCTION', countsSeat: true}` — a
+ * production seat burned against a string that is not a host, written to
+ * `activations.domain` and signed into the entitlement's `domain` claim.
  */
+const HOST_SHAPE = /^(?:[a-z0-9\u00a1-\uffff](?:[a-z0-9\u00a1-\uffff-]{0,61}[a-z0-9\u00a1-\uffff])?)(?:\.[a-z0-9\u00a1-\uffff](?:[a-z0-9\u00a1-\uffff-]{0,61}[a-z0-9\u00a1-\uffff])?)*$/;
+
 export function normalizeDomain(input: string): string {
 	const trimmed = input.trim().toLowerCase();
 	if (!trimmed) return '';
@@ -24,7 +34,21 @@ export function normalizeDomain(input: string): string {
 		host = trimmed.replace(/^[a-z]+:\/\//, '').split('/')[0].split(':')[0];
 	}
 
-	return host.replace(/\.$/, '').replace(/^www\./, '');
+	host = host.replace(/\.$/, '').replace(/^www\./, '');
+
+	if (!HOST_SHAPE.test(host) || host.length > 253) return '';
+
+	/*
+	 * A single label is not a site domain. Both parsers reach one from input
+	 * that never named a host: `new URL('https:///wp-admin')` normalises the
+	 * triple slash and reports the *path* as the hostname, and the regex
+	 * fallback reduces `javascript:alert(1)` to `javascript`. Requiring a dot
+	 * rejects both while keeping the two single-label forms that are real —
+	 * `localhost` and a bare IP, which `classifySite` already recognises.
+	 */
+	if (!host.includes('.')) return host === 'localhost' ? host : '';
+
+	return host;
 }
 
 const LOCAL_TLDS = ['.local', '.test', '.example', '.invalid', '.localhost'];

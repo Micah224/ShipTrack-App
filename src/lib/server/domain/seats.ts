@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { getDb } from '../db';
-import { activations, type Activation, type License } from '../db/schema';
-import type { SiteIdentity } from './site';
+import { getDb } from '../db/index.ts';
+import { activations, type Activation, type License } from '../db/schema.ts';
+import type { SiteIdentity } from './site.ts';
 
 /*
  * Seat accounting lives here and nowhere else.
@@ -73,6 +73,20 @@ export async function countSeats(licenseId: string): Promise<number> {
  * The guard on the insert is kept as a fast path: it rejects the common,
  * uncontended over-claim without writing anything.
  */
+/**
+ * How many live non-seat activations one licence may hold.
+ *
+ * Generous on purpose, and scaled: the whitelist exists so a developer can run
+ * staging and local copies without burning the seat their live site needs, and
+ * a cap that bites an honest team has taught them to pirate the plugin instead.
+ * Three per seat plus five covers a 1-seat customer running local, staging and
+ * a preview branch with room to spare, while pinning an abusive licence at a
+ * number rather than letting it grow forever.
+ */
+export function nonSeatCap(maxSeats: number): number {
+	return Math.max(3 * maxSeats + 5, 10);
+}
+
 export async function claimSeat(
 	license: License,
 	installId: string,
@@ -158,6 +172,48 @@ export async function claimSeat(
 		if (Array.isArray(lost) && lost.length > 0) {
 			return { ok: false, used: await countSeats(license.id) };
 		}
+	} else {
+		/*
+		 * A structural cap on NON-SEAT activations.
+		 *
+		 * The guard above deliberately skips staging, local and managed-host
+		 * installs, because they cost no seat. But "costs no seat" was being read
+		 * as "costs nothing": nothing capped how many of them one licence could
+		 * create, `install_id` is free text, and the maintenance sweep reclaims
+		 * only seat-holding rows — so these were written by anyone with a valid
+		 * key, without limit, and then touched by nothing in the codebase again.
+		 * Confirmed against the live database: two extra local installs returned
+		 * 200 with seats used 0.
+		 *
+		 * Rate limiting bounds how fast they arrive. Only this bounds how many
+		 * exist, which is the number that actually matters.
+		 *
+		 * Two deliberate differences from the seat eviction above:
+		 *
+		 *   Ordering is DESC, so the NEWEST non-seat activations survive. A
+		 *   developer's current local site keeps working and their six-month-old
+		 *   one is dropped — the opposite of the seat rule, where the incumbent
+		 *   has the stronger claim.
+		 *
+		 *   The eviction is not restricted to this install, so the caller's own
+		 *   activation still succeeds. The cap degrades rather than errors, which
+		 *   is how everything else in this product treats a limit.
+		 */
+		await db.execute(sql`
+			WITH live AS (
+				SELECT id, row_number() OVER (ORDER BY seat_claimed_at DESC, id DESC) AS rn
+				FROM ${activations}
+				WHERE ${activations.licenseId} = ${license.id}
+				  AND ${activations.releasedAt} IS NULL
+				  AND ${activations.countsSeat} = false
+			)
+			UPDATE ${activations} a
+			SET released_at = now(), release_reason = 'SUPERSEDED'
+			FROM live
+			WHERE a.id = live.id
+			  AND live.rn > ${nonSeatCap(license.maxSeats)}
+			  AND a.license_id = ${license.id}
+		`);
 	}
 
 	/*

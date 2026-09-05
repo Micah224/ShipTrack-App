@@ -1,4 +1,4 @@
-import type { License } from '../db/schema';
+import type { License } from '../db/schema.ts';
 
 export type Tier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
 

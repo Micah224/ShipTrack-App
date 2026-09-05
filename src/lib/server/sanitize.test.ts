@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { marked } from 'marked';
-import { sanitizeChangelogHtml } from './sanitize';
+import { sanitizeChangelogHtml } from './sanitize.ts';
 
 describe('sanitizeChangelogHtml', () => {
 	it('strips the payload that would run in every customer wp-admin', async () => {

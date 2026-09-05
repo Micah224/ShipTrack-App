@@ -8,6 +8,13 @@
       "when": 1788473214981,
       "tag": "0000_init_licensing",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788566483284,
+      "tag": "0001_rate_counters",
+      "breakpoints": true
     }
   ]
 }

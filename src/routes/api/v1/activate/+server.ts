@@ -2,8 +2,9 @@ import type { RequestHandler } from './$types';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
 import { audit, findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
 import { claimSeat } from '$lib/server/domain/seats';
+import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
-import { clientIp, fail, ok, readJson } from '$lib/server/http';
+import { clientIp, fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
 import { InvalidField, optionalStr, optionalStrArray, str } from '$lib/server/validate';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -37,7 +38,22 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const license = await findLicenseByKey(key);
 	if (!license) {
+		/*
+		 * Metered only after the lookup failed. A per-key bucket here would hand an
+		 * enumerator a fresh budget per guess, so the miss path gets the one global
+		 * bucket instead — safe because no resolved licence ever reaches it.
+		 */
+		const missLimit = await meterMiss();
+		if (missLimit.limited) return limited(missLimit, 'Too many requests. Try again in a moment.');
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
+	}
+
+	const rate = await meterLicense('activate', license, installId);
+	if (rate.limited) {
+		return limited(
+			rate,
+			'This licence is sending requests faster than expected. It will resume automatically.'
+		);
 	}
 
 	const state = licenseState(license);
@@ -91,5 +107,5 @@ export const POST: RequestHandler = async ({ request }) => {
 		environment: site.environment,
 		counts_seat: site.countsSeat,
 		seats: { used: outcome.used, total: license.maxSeats }
-	});
+	}, 200, rateLimitHeaders(rate));
 };
