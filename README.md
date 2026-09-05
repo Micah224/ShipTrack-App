@@ -10,7 +10,7 @@ updates to WordPress through the native update pipeline.
 | Piece | Where |
 | --- | --- |
 | API + UI | SvelteKit 5, Vercel project `ship-track-app`, Node 22 serverless |
-| Database | Neon `ShipTrack Pro`, PostgreSQL 18, `aws-eu-west-2` |
+| Database | Neon, provisioned from the Vercel **Storage** tab — organisation `Vercel: micah224's projects`, endpoint `ep-curly-credit-b24zg4c3`, `aws-eu-central-1`. The standalone `ShipTrack Pro` project in `aws-eu-west-2` is **not** production. See [key-setup §4](docs/operations/key-setup.md#4-database). |
 | Release archives | Cloudflare R2 bucket `shiptrack-app-store` |
 | Build source | GitHub Releases on the plugin repository, via `release.published` webhook |
 | Signing | Ed25519, private key in Vercel env, public key compiled into the plugin |
