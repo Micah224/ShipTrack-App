@@ -58,16 +58,20 @@ write and truncate. Never point them at production.
   bucket/subject pairs in one multi-row insert raise `ON CONFLICT DO UPDATE
   command cannot affect row a second time`, which is why `limits.ts` asserts
   distinctness before issuing the statement.
-- **A green `npm run build` does not mean the deployment runs.** Dependencies
-  left external are only imports in the output; whether they resolve is decided
-  by Vercel's loader, which — unlike local Node 22 — cannot `require()` an ES
-  module. `sanitize-html` is CommonJS and requires `htmlparser2`, ESM-only since
-  v12, so the admin console and the release webhook answered 500 with
-  `ERR_REQUIRE_ESM` while lint, typecheck, test and build were all green. Both
-  are in `ssr.noExternal` now — and both had to be, since bundling only the
-  parent leaves the child external and Rolldown re-emits the `require()` one
-  layer down. `npm run verify:bundle` imports every emitted chunk under
-  `--no-experimental-require-module` and is part of `check` and of CI.
+- **A green `npm run build` does not mean the deployment runs.** What ships is
+  `.vercel/output/functions/**/*.func`, each with a *traced* `node_modules`
+  holding only what the adapter saw imported — not the repo's own. Two outages
+  lived in that gap: `sanitize-html` (CommonJS) requiring `htmlparser2`, ESM-only
+  from v11, which Vercel's loader cannot do and local Node 22 can; then, after
+  "fixing" it with `ssr.noExternal`, `Cannot find module 'escape-string-regexp'`
+  — bundling drops a package out of the trace, so its own CJS dependencies stop
+  being shipped. `noExternal` is the wrong tool for a CJS package with CJS deps.
+  The fix is an `overrides` pin of `htmlparser2` to `^10.1.0`, the last line that
+  ships CommonJS and the one carrying the zero-padded-character-reference fix
+  (`sanitize.test.ts` proves the pin kept it). `npm run verify:bundle` copies
+  each `.func` to a temp dir — **without the copy, resolution walks up into the
+  repo's `node_modules` and certifies a broken build** — and imports every chunk,
+  not just the handler, since route modules load lazily.
 
 - **Relative imports under `src/lib/server/` must carry the `.ts` extension.**
   Vite resolves extensionless specifiers; Node's ESM loader does not, and the
