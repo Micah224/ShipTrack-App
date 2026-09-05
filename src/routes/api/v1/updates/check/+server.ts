@@ -10,8 +10,9 @@ import {
 	stateRefusal
 } from '$lib/server/domain/licenses';
 import { isNewer, latestRelease } from '$lib/server/domain/releases';
+import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
-import { fail, ok, readJson } from '$lib/server/http';
+import { fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
 import { InvalidField, str } from '$lib/server/validate';
 
 function publicBase(): string {
@@ -42,7 +43,22 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const license = await findLicenseByKey(key);
 	if (!license) {
+		/*
+		 * Metered only after the lookup failed. A per-key bucket here would hand an
+		 * enumerator a fresh budget per guess, so the miss path gets the one global
+		 * bucket instead — safe because no resolved licence ever reaches it.
+		 */
+		const missLimit = await meterMiss();
+		if (missLimit.limited) return limited(missLimit, 'Too many requests. Try again in a moment.');
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
+	}
+
+	const rate = await meterLicense('updates', license);
+	if (rate.limited) {
+		return limited(
+			rate,
+			'This licence is sending requests faster than expected. It will resume automatically.'
+		);
 	}
 
 	const state = licenseState(license);
@@ -53,7 +69,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const release = await latestRelease();
 	if (!release || !isNewer(release.version, version)) {
-		return ok({ update_available: false, latest_version: release?.version ?? version });
+		return ok({ update_available: false, latest_version: release?.version ?? version }, 200, rateLimitHeaders(rate));
 	}
 
 	const site = classifySite(siteUrl);
@@ -88,6 +104,6 @@ export const POST: RequestHandler = async ({ request }) => {
 			'1x': `${base}/assets/icon-128x128.png`,
 			'2x': `${base}/assets/icon-256x256.png`
 		}
-	});
+	}, 200, rateLimitHeaders(rate));
 };
 

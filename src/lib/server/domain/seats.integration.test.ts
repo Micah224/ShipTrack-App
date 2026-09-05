@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 /*
@@ -156,6 +157,74 @@ describe.skipIf(!DB_URL)('seat accounting against Postgres', () => {
 			expect(winner.activation.countsSeat).toBe(true);
 		}
 	});
+
+	/* `db.execute` hands back raw snake_case driver rows, not Drizzle's mapping. */
+	async function rows(query: ReturnType<typeof sql>): Promise<Record<string, unknown>[]> {
+		const res = await db.execute(query);
+		return ((res as unknown as { rows?: unknown[] }).rows ??
+			(res as unknown as unknown[])) as Record<string, unknown>[];
+	}
+
+	it('plateaus non-seat activations instead of letting them grow without bound', async () => {
+		/*
+		 * The finding this closes: `claimSeat` skipped its guard entirely when
+		 * `site.countsSeat` was false, and the maintenance sweep reclaims only
+		 * seat-holding rows — so a valid key could write staging/local rows
+		 * forever and nothing in the codebase would ever touch them again.
+		 *
+		 * Rate limiting bounds how fast they arrive. Only this bounds how many
+		 * exist, which is the number that actually matters.
+		 */
+		const license = await makeLicense(1, 'STARTER');
+		const { nonSeatCap } = await import('./seats.ts');
+		const cap = nonSeatCap(1);
+
+		for (let i = 0; i < cap + 12; i += 1) {
+			const r = await claimSeat(
+				license,
+				`local-${i}`,
+				classifySite(`https://dev${i}.test`),
+				telemetry()
+			);
+			// The caller always succeeds: the cap evicts the oldest, it does not
+			// refuse the newcomer. Degrading rather than erroring is how every
+			// other limit in this product behaves.
+			expect(r.ok).toBe(true);
+		}
+
+		const live = await rows(sql`
+			SELECT count(*)::int AS n FROM activations
+			 WHERE license_id = ${license.id} AND released_at IS NULL AND counts_seat = false`);
+		expect(Number(live[0].n)).toBe(cap);
+
+		// And it cost no seats, which was the whole point of the whitelist.
+		expect(await countSeats(license.id)).toBe(0);
+
+		// The evicted rows are stamped, not deleted — support needs to see them.
+		const superseded = await rows(sql`
+			SELECT count(*)::int AS n FROM activations
+			 WHERE license_id = ${license.id} AND release_reason = 'SUPERSEDED'`);
+		expect(Number(superseded[0].n)).toBe(12);
+	}, 120_000);
+
+	it('keeps the NEWEST non-seat installs, not the oldest', async () => {
+		// Opposite of the seat rule on purpose: a developer's current local site
+		// should keep working and their six-month-old one should be the one to go.
+		const license = await makeLicense(1, 'STARTER');
+		const { nonSeatCap } = await import('./seats.ts');
+		const cap = nonSeatCap(1);
+
+		for (let i = 0; i < cap + 3; i += 1) {
+			await claimSeat(license, `age-${i}`, classifySite(`https://age${i}.test`), telemetry());
+		}
+
+		const survivors = await rows(sql`
+			SELECT install_id FROM activations
+			 WHERE license_id = ${license.id} AND released_at IS NULL AND counts_seat = false`);
+		const ids = survivors.map((r: Record<string, unknown>) => String(r.install_id));
+		expect(ids).toContain(`age-${cap + 2}`);
+		expect(ids).not.toContain('age-0');
+	}, 120_000);
 
 	it('honours a multi-seat cap exactly', async () => {
 		const license = await makeLicense(3, 'PROFESSIONAL');

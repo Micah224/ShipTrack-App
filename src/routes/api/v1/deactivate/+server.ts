@@ -1,7 +1,8 @@
 import type { RequestHandler } from './$types';
 import { audit, findLicenseByKey, refusal } from '$lib/server/domain/licenses';
+import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { countSeats, releaseSeat } from '$lib/server/domain/seats';
-import { fail, ok, readJson } from '$lib/server/http';
+import { fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
 import { InvalidField, str } from '$lib/server/validate';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -19,7 +20,22 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const license = await findLicenseByKey(key);
 	if (!license) {
+		/*
+		 * Metered only after the lookup failed. A per-key bucket here would hand an
+		 * enumerator a fresh budget per guess, so the miss path gets the one global
+		 * bucket instead — safe because no resolved licence ever reaches it.
+		 */
+		const missLimit = await meterMiss();
+		if (missLimit.limited) return limited(missLimit, 'Too many requests. Try again in a moment.');
 		return fail(refusal('unknown_key', 'That licence key was not recognised.', 404));
+	}
+
+	const rate = await meterLicense('deactivate', license, installId);
+	if (rate.limited) {
+		return limited(
+			rate,
+			'This licence is sending requests faster than expected. It will resume automatically.'
+		);
 	}
 
 	// Deactivating something already gone is a success, not a fault: the plugin
@@ -30,5 +46,5 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const used = await countSeats(license.id);
-	return ok({ released: Boolean(released), seats: { used, total: license.maxSeats } });
+	return ok({ released: Boolean(released), seats: { used, total: license.maxSeats } }, 200, rateLimitHeaders(rate));
 };
