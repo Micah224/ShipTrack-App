@@ -53,9 +53,14 @@
 		const expires = new Date(licence.expiresAt);
 		// UTC days are always 86,400,000 ms, so this matches setUTCDate(+days).
 		const graceEnds = new Date(expires.getTime() + licence.gracePeriodDays * 86_400_000);
-		return expires.getTime() < Date.now()
-			? { label: 'Expired', sub: `Grace ends ${when(graceEnds)}` }
-			: { label: 'Expires', sub: `Then ${licence.gracePeriodDays} days' grace` };
+		const now = Date.now();
+		if (expires.getTime() >= now) {
+			return { label: 'Expires', sub: `Then ${licence.gracePeriodDays} days' grace` };
+		}
+		return {
+			label: 'Expired',
+			sub: `Grace ${graceEnds.getTime() >= now ? 'ends' : 'ended'} ${when(graceEnds)}`
+		};
 	});
 
 	function when(value: string | Date | null): string {
@@ -87,11 +92,16 @@
 		<h1 id="gone-title" class="st-display gone__title">This licence is no longer on file</h1>
 		<p class="gone__body">
 			Your session refers to a licence that has since been removed.
+			<!--
+				Not the key: a customer who has lost it cannot quote it, and a removed
+				licence cannot be revealed. The email it was issued to is always known,
+				and it is what the console searches licences by.
+			-->
 			{#if data.supportEmail}
-				Email <a href="mailto:{data.supportEmail}">{data.supportEmail}</a> and quote the key you signed
-				in with.
+				Email <a href="mailto:{data.supportEmail}">{data.supportEmail}</a> from, or naming, the address
+				the licence was issued to.
 			{:else}
-				Ask whoever sold you the licence, and quote the key you signed in with.
+				Ask whoever sold you the licence, naming the email address it was issued to.
 			{/if}
 		</p>
 	</section>
