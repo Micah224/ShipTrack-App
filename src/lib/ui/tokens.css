@@ -502,6 +502,16 @@ select.st-input {
 	}
 }
 
+/* Text for assistive technology only: read aloud, never drawn. */
+.st-vh {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
 .st-muted {
 	color: var(--ink-soft);
 }

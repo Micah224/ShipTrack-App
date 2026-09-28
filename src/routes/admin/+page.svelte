@@ -22,7 +22,7 @@
 			.map((row) => ({ key: row.tier, label: row.tier, value: row.count }))
 	);
 
-	// The version the chart is about is the most recently published one.
+	// The version the chart is about is the one the updater offers.
 	const versionRows = $derived(
 		stats.versions.map((row) => {
 			const latest = row.version === stats.latestRelease?.version;
@@ -53,7 +53,8 @@
 			key: 'stale',
 			label: 'Stale installs',
 			count: stats.installs.stale,
-			detail: 'No heartbeat in three days. Their seats are reclaimed if they stay silent.',
+			detail:
+				'No heartbeat in three days. A seat-holding install silent for longer (21 days by default) is released automatically.',
 			tone: 'warn',
 			path: '/admin/seats'
 		},
@@ -155,7 +156,7 @@
 			{:else}
 				<BarList rows={versionRows} total={totalInstalls} unit={['install', 'installs']} label="Installs by plugin version" />
 				{#if versionRows.some((row) => row.emphasis)}
-					<p class="key"><i aria-hidden="true"></i>The most recently published release</p>
+					<p class="key"><i aria-hidden="true"></i>The latest release, the one the updater offers</p>
 				{/if}
 			{/if}
 		</div>

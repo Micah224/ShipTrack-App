@@ -14,7 +14,7 @@
 <form method="GET" class="search" role="search">
 	<label class="search__field">
 		<span class="search__icon"><Icon name="search" size={16} /></span>
-		<span class="vh">{label}</span>
+		<span class="st-vh">{label}</span>
 		<input class="st-input search__input" type="search" name="q" {placeholder} {value} />
 	</label>
 	<button class="st-btn st-btn--ghost" type="submit">Search</button>
@@ -47,13 +47,5 @@
 	}
 	.search__input {
 		padding-left: 2.1rem;
-	}
-	.vh {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
 	}
 </style>

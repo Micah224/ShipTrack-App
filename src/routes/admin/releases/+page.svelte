@@ -22,7 +22,7 @@
 <PageHead
 	code="C04"
 	title="Release repository"
-	lede="Plugin builds ingested from GitHub releases and served to sites through the WordPress updater, most recently published first."
+	lede="Plugin builds ingested from GitHub releases, most recently published first. The one marked Latest is the highest version, which is what the WordPress updater offers."
 />
 
 {#if data.releases.length === 0}
@@ -36,13 +36,13 @@
 	</div>
 {:else}
 	<ol class="releases">
-		{#each data.releases as release, i (release.id)}
+		{#each data.releases as release (release.id)}
 			<li>
-				<details class="release" open={i === 0}>
+				<details class="release" open={release.id === data.latestId}>
 					<summary class="release__summary">
 						<span class="release__chevron" aria-hidden="true"><Icon name="chevron" size={16} /></span>
 						<span class="release__version">{release.version}</span>
-						{#if i === 0}<span class="st-chip" data-tone="accent">Latest</span>{/if}
+						{#if release.id === data.latestId}<span class="st-chip" data-tone="accent">Latest</span>{/if}
 						<span class="st-chip" data-raw>{release.tag}</span>
 						<span class="release__date">{published(release.publishedAt)}</span>
 						<span class="release__downloads">

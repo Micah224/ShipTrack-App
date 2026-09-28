@@ -14,7 +14,7 @@
 	$effect(() => {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), 5000);
-		fetch('/api/v1/heartbeat', { signal: controller.signal })
+		fetch(resolve('/api/v1/heartbeat'), { signal: controller.signal })
 			.then(async (res) => {
 				const body = res.ok ? await res.json() : null;
 				api = body?.ok && body?.ready ? 'up' : 'down';

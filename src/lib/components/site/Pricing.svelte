@@ -162,7 +162,8 @@
 										{#if tier.features.includes(flag)}
 											<span class="yes"><Icon name="check" size={16} label="Included" /></span>
 										{:else}
-											<span class="no" aria-label="Not included">—</span>
+											<span class="no" aria-hidden="true">—</span>
+											<span class="st-vh">Not included</span>
 										{/if}
 									</td>
 								{/each}

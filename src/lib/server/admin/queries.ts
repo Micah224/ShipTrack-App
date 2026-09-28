@@ -2,6 +2,7 @@ import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import { getDb } from '../db/index.ts';
 import { activations, customers, licenses, releases } from '../db/schema.ts';
 import { licenseState } from '../domain/licenses.ts';
+import { latestRelease } from '../domain/releases.ts';
 import { DEFAULT_SEATS, type Tier } from '../domain/tiers.ts';
 import { sanitizeChangelogHtml } from '../sanitize.ts';
 
@@ -20,7 +21,7 @@ const STALE_DAYS = 3;
 export async function dashboardStats(): Promise<DashboardStats> {
 	const db = getDb();
 
-	const [tierRows, statusRows, capacityRow, seatRow, installRows, versionRows, releaseRow] =
+	const [tierRows, statusRows, capacityRow, seatRow, installRows, versionRows, latest] =
 		await Promise.all([
 			db.select({ tier: licenses.tier, count: count() }).from(licenses).groupBy(licenses.tier),
 			db.select({ status: licenses.status, count: count() }).from(licenses).groupBy(licenses.status),
@@ -42,11 +43,9 @@ export async function dashboardStats(): Promise<DashboardStats> {
 				.from(activations)
 				.where(isNull(activations.releasedAt))
 				.groupBy(activations.pluginVersion),
-			db
-				.select({ version: releases.version, publishedAt: releases.publishedAt })
-				.from(releases)
-				.orderBy(desc(releases.publishedAt))
-				.limit(1)
+			// The updater's own choice, by version rather than publish date: a patch
+			// for an older line published after a newer minor is not the latest.
+			latestRelease()
 		]);
 
 	const staleRow = await db
@@ -80,7 +79,7 @@ export async function dashboardStats(): Promise<DashboardStats> {
 		// Newest first, so the adoption list reads as a rollout rather than
 		// alphabetically, where 5.10.0 would sort under 5.9.0.
 		versions: versionRows.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true })),
-		latestRelease: releaseRow[0] ?? null
+		latestRelease: latest ? { version: latest.version, publishedAt: latest.publishedAt } : null
 	};
 }
 

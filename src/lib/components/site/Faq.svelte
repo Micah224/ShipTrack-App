@@ -25,7 +25,7 @@
 		},
 		{
 			q: 'I have lost my licence key.',
-			a: 'It is in your purchase confirmation email. Only a hash of it is stored, so it cannot be recovered, but it can be re-issued.'
+			a: 'Contact us. Keys are stored encrypted, so the same key can be looked up and sent to you again, and every site already activated with it keeps working.'
 		},
 		{
 			q: 'What does it need to run?',
