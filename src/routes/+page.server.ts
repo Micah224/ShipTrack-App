@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { DEFAULT_SEATS, TIER_FEATURES, TIER_LIMITS, type Tier } from '$lib/server/domain/tiers';
+import { supportEmail } from '$lib/server/support';
 
 /*
  * The pricing table is computed from the same matrix the licence API grants
@@ -46,5 +47,6 @@ export const load: PageServerLoad = () => ({
 		seats: DEFAULT_SEATS[tier],
 		features: TIER_FEATURES[tier],
 		limits: TIER_LIMITS[tier]
-	}))
+	})),
+	supportEmail: supportEmail()
 });

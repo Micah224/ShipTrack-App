@@ -1,21 +1,28 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import KeyReveal from '$lib/components/console/KeyReveal.svelte';
+	import PageHead from '$lib/components/console/PageHead.svelte';
+	import SearchBar from '$lib/components/console/SearchBar.svelte';
+	import StateChip, { type Tone } from '$lib/components/console/StateChip.svelte';
+	import Icon from '$lib/ui/Icon.svelte';
 
 	let { data, form } = $props();
 
 	let editing = $state<string | null>(null);
 	let minting = $state(false);
 
-	function stateBadge(state: string): string {
+	function stateTone(state: string): Tone {
 		switch (state) {
 			case 'ACTIVE':
-				return 'preset-filled-success-500';
+				return 'good';
 			case 'GRACE':
-				return 'preset-filled-warning-500';
+			case 'SUSPENDED':
+				return 'warn';
 			case 'REVOKED':
-				return 'preset-filled-error-500';
+			case 'EXPIRED':
+				return 'crit';
 			default:
-				return 'preset-tonal-surface';
+				return 'neutral';
 		}
 	}
 
@@ -26,123 +33,160 @@
 
 <svelte:head><title>Licences · ShipTrack Pro</title></svelte:head>
 
-<div class="mb-6 flex flex-wrap items-center gap-4">
-	<h1 class="h4">Licences</h1>
-	<form method="GET" class="flex gap-2">
-		<input class="input" type="search" name="q" placeholder="Search email, name or prefix" value={data.search} />
-		<button class="btn preset-outlined-surface-200-800" type="submit">Search</button>
-	</form>
-	<button class="btn preset-filled-primary-500 ml-auto" onclick={() => (minting = !minting)}>
-		{minting ? 'Cancel' : 'Mint licence'}
+<PageHead code="C02" title="Licences" lede="Mint keys, change what a licence grants, and revoke or restore it.">
+	<SearchBar value={data.search} placeholder="Email, name, label or key prefix" label="Search licences" />
+	<button
+		class="st-btn {minting ? 'st-btn--ghost' : 'st-btn--accent'}"
+		type="button"
+		aria-expanded={minting}
+		aria-controls="mint-form"
+		onclick={() => (minting = !minting)}
+	>
+		{#if minting}Cancel{:else}<Icon name="licences" size={16} /> Mint licence{/if}
 	</button>
-</div>
+</PageHead>
 
 {#if form?.message}
-	<p class="card preset-tonal-primary mb-4 p-3 text-sm" role="status">{form.message}</p>
+	<p class="notice" role="status">{form.message}</p>
 {/if}
 
 {#if form?.minted}
-	<div class="card preset-filled-success-500 mb-6 p-5">
-		<h2 class="h6 mb-2">Licence minted for {form.minted.email}</h2>
-		<p class="mb-3 text-sm">
-			{form.minted.tier} · {form.minted.seats} seat(s). This is the only time the key is shown —
-			it is stored encrypted and hashed, so it cannot be read back from the database without an
-			audited reveal.
-		</p>
-		<code class="block rounded bg-black/20 p-3 font-mono text-lg tracking-wider select-all">
-			{form.minted.key}
-		</code>
-	</div>
+	<KeyReveal
+		tone="good"
+		title="Licence minted for {form.minted.email}"
+		note="{form.minted.tier} · {form.minted.seats} seat{form.minted.seats === 1
+			? ''
+			: 's'}. This is the only time the key is shown: it is stored encrypted and hashed, and reading it back later is an audited reveal."
+		value={form.minted.key}
+	/>
 {/if}
 
 {#if form?.revealed}
-	<div class="card preset-filled-warning-500 mb-6 p-5">
-		<h2 class="h6 mb-2">Key revealed</h2>
-		<p class="mb-3 text-sm">This reveal has been written to the audit log.</p>
-		<code class="block rounded bg-black/20 p-3 font-mono text-lg tracking-wider select-all">
-			{form.revealed.key}
-		</code>
-	</div>
+	<KeyReveal
+		tone="warn"
+		title="Key revealed"
+		note="This reveal has been written to the audit log under your name."
+		value={form.revealed.key}
+	/>
 {/if}
 
 {#if minting}
 	<form
+		id="mint-form"
 		method="POST"
 		action="?/mint"
-		use:enhance={() => async ({ update }) => { await update(); minting = false; }}
-		class="card preset-outlined-surface-200-800 mb-6 grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"
+		use:enhance={() =>
+			async ({ update }) => {
+				await update();
+				minting = false;
+			}}
+		class="st-panel mint"
 	>
-		<label class="label"><span class="label-text">Customer email</span>
-			<input class="input" type="email" name="email" required /></label>
-		<label class="label"><span class="label-text">Customer name</span>
-			<input class="input" type="text" name="name" required /></label>
-		<label class="label"><span class="label-text">Label (optional)</span>
-			<input class="input" type="text" name="label" placeholder="e.g. Acme main site" /></label>
-		<label class="label"><span class="label-text">Tier</span>
-			<select class="select" name="tier">
-				{#each data.tiers as tier (tier)}<option value={tier}>{tier}</option>{/each}
-			</select></label>
-		<label class="label"><span class="label-text">Seats (blank = tier default)</span>
-			<input class="input" type="number" name="seats" min="1" /></label>
-		<label class="label"><span class="label-text">Expires (blank = lifetime)</span>
-			<input class="input" type="date" name="expires" /></label>
-		<div class="sm:col-span-2 lg:col-span-3">
-			<button class="btn preset-filled-primary-500" type="submit">Mint and show key</button>
+		<div class="st-panel__head">
+			<h2 class="st-panel__title">New licence</h2>
+		</div>
+		<div class="st-panel__body fields">
+			<label class="st-field">
+				<span class="st-label">Customer email</span>
+				<input class="st-input" type="email" name="email" required />
+			</label>
+			<label class="st-field">
+				<span class="st-label">Customer name</span>
+				<input class="st-input" type="text" name="name" required />
+			</label>
+			<label class="st-field">
+				<span class="st-label">Label (optional)</span>
+				<input class="st-input" type="text" name="label" placeholder="e.g. Acme main site" />
+			</label>
+			<label class="st-field">
+				<span class="st-label">Tier</span>
+				<select class="st-input" name="tier">
+					{#each data.tiers as tier (tier)}<option value={tier}>{tier}</option>{/each}
+				</select>
+			</label>
+			<label class="st-field">
+				<span class="st-label">Seats (blank for the tier default)</span>
+				<input class="st-input" type="number" name="seats" min="1" />
+			</label>
+			<label class="st-field">
+				<span class="st-label">Expires (blank for lifetime)</span>
+				<input class="st-input" type="date" name="expires" />
+			</label>
+			<div class="fields__submit">
+				<button class="st-btn st-btn--accent" type="submit">Mint and show key</button>
+			</div>
 		</div>
 	</form>
 {/if}
 
-<div class="table-wrap">
-	<table class="table">
+<!-- Scrolls sideways when a row is wide, so it takes focus for keyboard scrolling. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="st-table-wrap" tabindex="0" role="region" aria-label="Licences">
+	<table class="st-table st-table--cards">
 		<thead>
 			<tr>
-				<th>Key</th><th>Customer</th><th>Tier</th><th>Seats</th>
-				<th>State</th><th>Expires</th><th class="text-right">Actions</th>
+				<th scope="col">Key</th>
+				<th scope="col">Customer</th>
+				<th scope="col">Tier</th>
+				<th scope="col">Seats</th>
+				<th scope="col">State</th>
+				<th scope="col">Expires</th>
+				<th scope="col" class="st-end">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#each data.licenses as license (license.id)}
-				<tr>
-					<td>
-						<code class="text-sm">{license.keyPrefix}</code>
-						{#if license.label}<div class="text-xs opacity-60">{license.label}</div>{/if}
+				<tr class:row--open={editing === license.id}>
+					<td data-label="Key">
+						<div>
+							<code class="st-code">{license.keyPrefix}</code>
+							{#if license.label}<div class="sub">{license.label}</div>{/if}
+						</div>
 					</td>
-					<td>
-						{license.customerName}
-						<div class="text-xs opacity-60">{license.customerEmail}</div>
+					<td data-label="Customer">
+						<div>
+							{license.customerName}
+							<div class="sub">{license.customerEmail}</div>
+						</div>
 					</td>
-					<td><span class="badge preset-tonal-primary">{license.tier}</span></td>
-					<td>
-						{license.seatsUsed} / {license.maxSeats}
-						{#if license.seatsUsed >= license.maxSeats}
-							<span class="badge preset-tonal-warning ml-1 text-xs">full</span>
-						{/if}
+					<td data-label="Tier"><span class="st-chip">{license.tier}</span></td>
+					<td data-label="Seats">
+						<div class="seats">
+							<span class="st-num">{license.seatsUsed} / {license.maxSeats}</span>
+							{#if license.seatsUsed >= license.maxSeats}
+								<StateChip tone="warn" label="Full" />
+							{/if}
+						</div>
 					</td>
-					<td><span class="badge {stateBadge(license.state)}">{license.state}</span></td>
-					<td class="text-sm">{isoDate(license.expiresAt) || 'never'}</td>
-					<td class="text-right">
-						<div class="flex flex-wrap justify-end gap-1">
+					<td data-label="State"><StateChip tone={stateTone(license.state)} label={license.state} /></td>
+					<td data-label="Expires">
+						<span class="st-code st-num">{isoDate(license.expiresAt) || 'never'}</span>
+					</td>
+					<td class="st-end">
+						<div class="actions">
 							<button
-								class="btn btn-sm preset-outlined-surface-200-800"
+								class="st-btn st-btn--ghost st-btn--sm"
+								type="button"
+								aria-expanded={editing === license.id}
 								onclick={() => (editing = editing === license.id ? null : license.id)}
 							>
 								{editing === license.id ? 'Close' : 'Edit'}
 							</button>
 							<form method="POST" action="?/reveal" use:enhance>
 								<input type="hidden" name="id" value={license.id} />
-								<button class="btn btn-sm preset-outlined-warning-500" type="submit">Reveal</button>
+								<button class="st-btn st-btn--warn st-btn--sm" type="submit">Reveal</button>
 							</form>
 							{#if license.status === 'REVOKED'}
 								<form method="POST" action="?/status" use:enhance>
 									<input type="hidden" name="id" value={license.id} />
 									<input type="hidden" name="status" value="ACTIVE" />
-									<button class="btn btn-sm preset-outlined-success-500" type="submit">Restore</button>
+									<button class="st-btn st-btn--good st-btn--sm" type="submit">Restore</button>
 								</form>
 							{:else}
 								<form method="POST" action="?/status" use:enhance>
 									<input type="hidden" name="id" value={license.id} />
 									<input type="hidden" name="status" value="REVOKED" />
-									<button class="btn btn-sm preset-filled-error-500" type="submit">Revoke</button>
+									<button class="st-btn st-btn--danger st-btn--sm" type="submit">Revoke</button>
 								</form>
 							{/if}
 						</div>
@@ -150,35 +194,126 @@
 				</tr>
 
 				{#if editing === license.id}
-					<tr>
-						<td colspan="7" class="bg-surface-100-900">
+					<tr class="edit">
+						<td colspan="7">
 							<form
 								method="POST"
 								action="?/update"
-								use:enhance={() => async ({ update }) => { await update(); editing = null; }}
-								class="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4"
+								use:enhance={() =>
+									async ({ update }) => {
+										await update();
+										editing = null;
+									}}
+								class="fields fields--edit"
 							>
 								<input type="hidden" name="id" value={license.id} />
-								<label class="label"><span class="label-text">Tier</span>
-									<select class="select" name="tier" value={license.tier}>
+								<label class="st-field">
+									<span class="st-label">Tier</span>
+									<select class="st-input" name="tier" value={license.tier}>
 										{#each data.tiers as tier (tier)}<option value={tier}>{tier}</option>{/each}
-									</select></label>
-								<label class="label"><span class="label-text">Seats</span>
-									<input class="input" type="number" name="seats" min="1" value={license.maxSeats} /></label>
-								<label class="label"><span class="label-text">Expires</span>
-									<input class="input" type="date" name="expires" value={isoDate(license.expiresAt)} /></label>
-								<label class="label"><span class="label-text">Label</span>
-									<input class="input" type="text" name="label" value={license.label ?? ''} /></label>
-								<div class="sm:col-span-2 lg:col-span-4">
-									<button class="btn preset-filled-primary-500" type="submit">Save changes</button>
+									</select>
+								</label>
+								<label class="st-field">
+									<span class="st-label">Seats</span>
+									<input class="st-input" type="number" name="seats" min="1" value={license.maxSeats} />
+								</label>
+								<label class="st-field">
+									<span class="st-label">Expires</span>
+									<input class="st-input" type="date" name="expires" value={isoDate(license.expiresAt)} />
+								</label>
+								<label class="st-field">
+									<span class="st-label">Label</span>
+									<input class="st-input" type="text" name="label" value={license.label ?? ''} />
+								</label>
+								<div class="fields__submit">
+									<button class="st-btn st-btn--accent" type="submit">Save changes</button>
 								</div>
 							</form>
 						</td>
 					</tr>
 				{/if}
 			{:else}
-				<tr><td colspan="7" class="py-8 text-center opacity-60">No licences match.</td></tr>
+				<tr>
+					<td colspan="7" class="none">
+						{data.search ? `No licences match “${data.search}”.` : 'No licences have been minted yet.'}
+					</td>
+				</tr>
 			{/each}
 		</tbody>
 	</table>
 </div>
+
+<style>
+	.notice {
+		margin: 0 0 1.25rem;
+		padding: 0.8rem 1rem;
+		border: 1px solid var(--rule);
+		border-left: 4px solid var(--ink-soft);
+		background: var(--sheet);
+		font-size: 14px;
+	}
+	.mint {
+		margin-bottom: 1.25rem;
+	}
+	.fields {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1rem;
+	}
+	.fields--edit {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		padding: 0.25rem 0;
+	}
+	.fields__submit {
+		grid-column: 1 / -1;
+	}
+	.sub {
+		margin-top: 0.15rem;
+		color: var(--ink-faint);
+		font-size: 13px;
+		overflow-wrap: anywhere;
+	}
+	.seats {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 0.35rem;
+	}
+	.row--open td {
+		background: var(--sheet-2);
+	}
+	.edit td {
+		background: var(--sheet-2);
+		border-bottom: 1px solid var(--rule);
+	}
+	.none {
+		padding: 3rem 1rem;
+		color: var(--ink-soft);
+		text-align: center;
+	}
+
+	@media (max-width: 1000px) {
+		.fields,
+		.fields--edit {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	@media (max-width: 760px) {
+		.fields,
+		.fields--edit {
+			grid-template-columns: 1fr;
+		}
+		.actions {
+			justify-content: flex-start;
+		}
+		.none {
+			text-align: left;
+		}
+	}
+</style>

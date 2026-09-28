@@ -2,6 +2,7 @@ import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import { getDb } from '../db/index.ts';
 import { activations, customers, licenses, releases } from '../db/schema.ts';
 import { licenseState } from '../domain/licenses.ts';
+import { latestRelease } from '../domain/releases.ts';
 import { DEFAULT_SEATS, type Tier } from '../domain/tiers.ts';
 import { sanitizeChangelogHtml } from '../sanitize.ts';
 
@@ -17,17 +18,25 @@ export interface DashboardStats {
 /** How long without a heartbeat before an install is shown as stale. */
 const STALE_DAYS = 3;
 
+/** Every figure the console overview shows. */
 export async function dashboardStats(): Promise<DashboardStats> {
 	const db = getDb();
 
-	const [tierRows, statusRows, capacityRow, seatRow, installRows, versionRows, releaseRow] =
+	const [tierRows, statusRows, capacityRow, seatRow, installRows, versionRows, latest] =
 		await Promise.all([
 			db.select({ tier: licenses.tier, count: count() }).from(licenses).groupBy(licenses.tier),
 			db.select({ status: licenses.status, count: count() }).from(licenses).groupBy(licenses.status),
+			// Seats of licences that are in force: ACTIVE and not past expiry plus
+			// grace, the same boundary the expired count below uses.
 			db
 				.select({ capacity: sql<number>`coalesce(sum(${licenses.maxSeats}), 0)::int` })
 				.from(licenses)
-				.where(eq(licenses.status, 'ACTIVE')),
+				.where(
+					and(
+						eq(licenses.status, 'ACTIVE'),
+						sql`(${licenses.expiresAt} is null or ${licenses.expiresAt} + make_interval(days => ${licenses.gracePeriodDays}) >= now())`
+					)
+				),
 			db
 				.select({ used: sql<number>`count(*)::int` })
 				.from(activations)
@@ -42,32 +51,48 @@ export async function dashboardStats(): Promise<DashboardStats> {
 				.from(activations)
 				.where(isNull(activations.releasedAt))
 				.groupBy(activations.pluginVersion),
-			db
-				.select({ version: releases.version, publishedAt: releases.publishedAt })
-				.from(releases)
-				.orderBy(desc(releases.publishedAt))
-				.limit(1)
+			// The updater's own choice, by version rather than publish date: a patch
+			// for an older line published after a newer minor is not the latest.
+			latestRelease()
 		]);
 
-	const staleRow = await db
-		.select({ stale: sql<number>`count(*)::int` })
-		.from(activations)
-		.where(
-			and(
-				isNull(activations.releasedAt),
-				sql`${activations.lastHeartbeat} < now() - make_interval(days => ${STALE_DAYS})`
+	const [staleRow, lapsedRow] = await Promise.all([
+		db
+			.select({ stale: sql<number>`count(*)::int` })
+			.from(activations)
+			.where(
+				and(
+					isNull(activations.releasedAt),
+					sql`${activations.lastHeartbeat} < now() - make_interval(days => ${STALE_DAYS})`
+				)
+			),
+		/*
+		 * Expiry is computed, never stored: nothing writes status = 'EXPIRED'.
+		 * licenseState() calls an ACTIVE licence expired once it is past its
+		 * expiry date and its grace period, so count those here too, or the
+		 * overview reports "Expired 0" while every one of them is being refused.
+		 */
+		db
+			.select({ lapsed: sql<number>`count(*)::int` })
+			.from(licenses)
+			.where(
+				and(
+					eq(licenses.status, 'ACTIVE'),
+					sql`${licenses.expiresAt} + make_interval(days => ${licenses.gracePeriodDays}) < now()`
+				)
 			)
-		);
+	]);
 
 	const status = (name: string) =>
 		statusRows.find((row) => row.status === name)?.count ?? 0;
+	const lapsed = lapsedRow[0]?.lapsed ?? 0;
 
 	return {
 		licenses: {
 			total: statusRows.reduce((sum, row) => sum + row.count, 0),
-			active: status('ACTIVE'),
+			active: Math.max(0, status('ACTIVE') - lapsed),
 			revoked: status('REVOKED'),
-			expired: status('EXPIRED'),
+			expired: status('EXPIRED') + lapsed,
 			suspended: status('SUSPENDED')
 		},
 		byTier: tierRows.map((row) => ({ tier: row.tier, count: row.count })),
@@ -80,7 +105,7 @@ export async function dashboardStats(): Promise<DashboardStats> {
 		// Newest first, so the adoption list reads as a rollout rather than
 		// alphabetically, where 5.10.0 would sort under 5.9.0.
 		versions: versionRows.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true })),
-		latestRelease: releaseRow[0] ?? null
+		latestRelease: latest ? { version: latest.version, publishedAt: latest.publishedAt } : null
 	};
 }
 
