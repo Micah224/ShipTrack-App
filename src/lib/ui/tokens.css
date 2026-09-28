@@ -72,6 +72,17 @@
 	--hatch: var(--site-hatch);
 	/* Mint fails as a ring on the light sheet (1.3:1), so focus is ink. */
 	--focus: var(--site-ink);
+	/*
+	 * The console's status inks are pale enough to read on near-black and
+	 * nowhere else (mint on this sheet is 1.3:1), so the light surface carries
+	 * the same three states as dark inks of the same hues. Measured on the
+	 * canvas under a 7% chip tint, the worst case: 5.2, 5.0 and 5.0 to 1.
+	 */
+	--st-good-ink: #0a6640;
+	--st-warn-ink: #8a4b00;
+	--st-crit-ink: #b0221b;
+	--st-crit-line: color-mix(in oklab, var(--st-crit-ink) 45%, transparent);
+	--st-crit-bg: color-mix(in oklab, var(--st-crit-ink) 7%, transparent);
 	background: var(--bg);
 	color: var(--ink);
 	font-family: var(--st-font-text);
@@ -336,6 +347,22 @@ html:has(.st-console) {
 	--chip-ink: var(--mint-ink);
 	--chip-line: var(--mint);
 	--chip-bg: var(--mint);
+}
+/* On the light sheet the same three states, in the site's dark status inks. */
+.st-site .st-chip[data-tone='good'] {
+	--chip-ink: var(--st-good-ink);
+	--chip-line: color-mix(in oklab, var(--st-good-ink) 40%, transparent);
+	--chip-bg: color-mix(in oklab, var(--st-good-ink) 7%, transparent);
+}
+.st-site .st-chip[data-tone='warn'] {
+	--chip-ink: var(--st-warn-ink);
+	--chip-line: color-mix(in oklab, var(--st-warn-ink) 40%, transparent);
+	--chip-bg: color-mix(in oklab, var(--st-warn-ink) 7%, transparent);
+}
+.st-site .st-chip[data-tone='crit'] {
+	--chip-ink: var(--st-crit-ink);
+	--chip-line: var(--st-crit-line);
+	--chip-bg: var(--st-crit-bg);
 }
 
 /* ----------------------------------------------------------------- panels */
