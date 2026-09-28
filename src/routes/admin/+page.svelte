@@ -8,8 +8,17 @@
 	let { data } = $props();
 
 	const stats = $derived(data.stats);
+	// A share of zero capacity is undefined, not 0%: when every licence still
+	// holding seats has lapsed or been revoked, those seats remain bound.
 	const utilisation = $derived(
-		stats.seats.capacity > 0 ? Math.round((stats.seats.used / stats.seats.capacity) * 100) : 0
+		stats.seats.capacity > 0
+			? Math.round((stats.seats.used / stats.seats.capacity) * 100)
+			: stats.seats.used > 0
+				? null
+				: 0
+	);
+	const utilisationText = $derived(
+		utilisation === null ? 'no licence in force' : `${utilisation}%`
 	);
 	const totalInstalls = $derived(stats.installs.production + stats.installs.nonProduction);
 
@@ -110,22 +119,27 @@
 
 	<div class="figure">
 		<p class="st-label">Seat utilisation</p>
-		<p class="figure__value">{utilisation}<span class="figure__unit">%</span></p>
+		{#if utilisation === null}
+			<p class="figure__value figure__value--none">No capacity</p>
+		{:else}
+			<p class="figure__value">{utilisation}<span class="figure__unit">%</span></p>
+		{/if}
 		<!--
-			Used can exceed capacity: capacity counts active licences only, while
-			seats on revoked or suspended ones stay bound. valuetext says what the
+			Used can exceed capacity: capacity counts licences in force only, while
+			seats on lapsed, revoked or suspended ones stay bound. valuetext says what the
 			screen says, and the maximum never collapses onto the minimum.
 		-->
 		<div
 			class="meter"
+			class:meter--over={stats.seats.used > stats.seats.capacity}
 			role="meter"
 			aria-label="Production seats in use"
 			aria-valuenow={stats.seats.used}
 			aria-valuemin={0}
 			aria-valuemax={Math.max(1, stats.seats.capacity, stats.seats.used)}
-			aria-valuetext="{stats.seats.used} of {stats.seats.capacity} production seats, {utilisation}%"
+			aria-valuetext="{stats.seats.used} of {stats.seats.capacity} production seats, {utilisationText}"
 		>
-			<span style:width="{Math.min(utilisation, 100)}%"></span>
+			<span style:width="{Math.min(utilisation ?? 100, 100)}%"></span>
 		</div>
 		<p class="figure__sub">{stats.seats.used} of {stats.seats.capacity} production seats</p>
 	</div>
@@ -268,6 +282,10 @@
 		min-width: 2px;
 		border-radius: 0 4px 4px 0;
 		background: var(--con-good);
+	}
+	/* More seats bound than licences in force grant: not a healthy full bar. */
+	.meter--over span {
+		background: var(--con-warn);
 	}
 
 	.charts {

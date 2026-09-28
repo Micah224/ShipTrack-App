@@ -60,7 +60,7 @@
 		{ where: 'A live site', seat: '1 seat', how: 'Any domain not matched below' },
 		{ where: 'Staging copy', seat: 'Free', how: 'Starts with staging., dev., test., stage. or preview.' },
 		{ where: 'Managed-host preview', seat: 'Free', how: 'WP Engine, Kinsta and Pantheon preview domains' },
-		{ where: 'Local install', seat: 'Free', how: 'localhost, private IP ranges, .local, .test, .example' }
+		{ where: 'Local install', seat: 'Free', how: 'localhost, private IP ranges, .local, .test, .example, .invalid, .localhost' }
 	];
 </script>
 
