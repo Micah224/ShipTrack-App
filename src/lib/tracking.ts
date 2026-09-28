@@ -22,6 +22,7 @@ function codePoint(char: string): number {
 	return 0;
 }
 
+/** The inverse of codePoint: 0..9 => '0'-'9', 10..35 => 'A'-'Z'. */
 function fromCodePoint(value: number): string {
 	return value < 10 ? String.fromCharCode(value + 48) : String.fromCharCode(value - 10 + 65);
 }

@@ -56,10 +56,10 @@
 			<Modules />
 			<Assurance />
 			<Pricing tiers={data.tiers} />
-			<Faq />
+			<Faq supportEmail={data.supportEmail} />
 			<Close />
 		</main>
-		<SiteFooter />
+		<SiteFooter supportEmail={data.supportEmail} />
 	</div>
 </div>
 

@@ -30,10 +30,12 @@ export interface BoxDrawing {
 	bars: [number, number, number, number][];
 }
 
+/** Yard coordinates to screen coordinates, in the one isometric projection. */
 export function project(x: number, y: number, z: number, unit: number): [number, number] {
 	return [(x - y) * COS * unit, (x + y) * SIN * unit - z * unit];
 }
 
+/** A projected face as an SVG `points` string. */
 function poly(points: [number, number, number][], unit: number): string {
 	return points
 		.map(([x, y, z]) =>
@@ -44,6 +46,7 @@ function poly(points: [number, number, number][], unit: number): string {
 		.join(' ');
 }
 
+/** A projected line segment, as the x1, y1, x2, y2 an SVG line takes. */
 function segment(
 	a: [number, number, number],
 	b: [number, number, number],

@@ -18,6 +18,7 @@ export interface DashboardStats {
 /** How long without a heartbeat before an install is shown as stale. */
 const STALE_DAYS = 3;
 
+/** Every figure the console overview shows. */
 export async function dashboardStats(): Promise<DashboardStats> {
 	const db = getDb();
 

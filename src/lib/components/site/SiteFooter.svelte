@@ -4,6 +4,13 @@
 	import { bounds, type Box } from '$lib/ui/iso';
 	import Mark from '$lib/ui/Mark.svelte';
 
+	interface Props {
+		/** SUPPORT_EMAIL, when configured; the Support link is left out otherwise. */
+		supportEmail: string | null;
+	}
+
+	let { supportEmail }: Props = $props();
+
 	/*
 	 * The status light asks the real licence API, not a status page: the same
 	 * unauthenticated liveness probe the runbook uses. It only reports what it
@@ -82,6 +89,9 @@
 			<ul>
 				<li><a href={resolve('/portal')}>Licence portal</a></li>
 				<li><a href="#faq">FAQ</a></li>
+				{#if supportEmail}
+					<li><a href="mailto:{supportEmail}">Support</a></li>
+				{/if}
 			</ul>
 		</nav>
 

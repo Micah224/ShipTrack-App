@@ -1,12 +1,19 @@
 <script lang="ts">
 	import Icon from '$lib/ui/Icon.svelte';
 
+	interface Props {
+		/** SUPPORT_EMAIL, when configured and plainly an address. */
+		supportEmail: string | null;
+	}
+
+	let { supportEmail }: Props = $props();
+
 	/*
 	 * Answers restate how the platform behaves; none of them promise anything
 	 * the code does not do. Native <details>, so it works without JavaScript and
 	 * every answer is in the document for search and screen readers.
 	 */
-	const faqs = [
+	const faqs: { q: string; a: string; contact?: boolean }[] = [
 		{
 			q: 'What counts as a seat?',
 			a: 'A production site. Staging copies, managed-host previews and local installs are recognised automatically and never use one; the table above lists exactly how.'
@@ -25,7 +32,8 @@
 		},
 		{
 			q: 'I have lost my licence key.',
-			a: 'Contact us. Keys are stored encrypted, so the same key can be looked up and sent to you again, and every site already activated with it keeps working.'
+			a: 'Keys are stored encrypted, so the same key can be looked up and sent to you again, and every site already activated with it keeps working.',
+			contact: true
 		},
 		{
 			q: 'What does it need to run?',
@@ -43,7 +51,17 @@
 					<span>{item.q}</span>
 					<span class="faq__chev"><Icon name="chevron" size={18} /></span>
 				</summary>
-				<p>{item.a}</p>
+				<p>
+					{#if item.contact}
+						<!-- The way to ask comes first; without an address, point at the seller. -->
+						{#if supportEmail}
+							Email <a href="mailto:{supportEmail}">{supportEmail}</a>.
+						{:else}
+							Ask whoever sold you the licence.
+						{/if}
+					{/if}
+					{item.a}
+				</p>
 			</details>
 		{/each}
 	</div>

@@ -8,6 +8,7 @@ import type { Attachment } from 'svelte/attachments';
  * once it knows it can also mark it in; content is never hidden by CSS alone.
  */
 
+/** True when the visitor asked for reduced motion; false on the server. */
 export function prefersReducedMotion(): boolean {
 	return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
