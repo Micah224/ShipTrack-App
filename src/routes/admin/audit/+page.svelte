@@ -7,8 +7,8 @@
 
 	let { data } = $props();
 
-	// Refusals and destruction read as critical, disclosure and capacity as a
-	// warning; everything else is routine and stays neutral.
+	// Refusals and revocation read as critical; disclosure, capacity, throttling
+	// and suspension as a warning; everything else is routine and stays neutral.
 	function tone(action: string): Tone {
 		if (
 			action.includes('failed') ||
@@ -18,7 +18,14 @@
 		) {
 			return 'crit';
 		}
-		if (action.includes('revealed') || action.includes('seat_limit')) return 'warn';
+		if (
+			action.includes('revealed') ||
+			action.includes('seat_limit') ||
+			action.includes('rate_limited') ||
+			action.includes('suspended')
+		) {
+			return 'warn';
+		}
 		return 'neutral';
 	}
 
@@ -47,7 +54,9 @@
 	<SearchBar value={data.search} placeholder="Action or actor" label="Search the audit log" />
 </PageHead>
 
-<div class="st-table-wrap">
+<!-- Scrolls sideways when a row is wide, so it takes focus for keyboard scrolling. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="st-table-wrap" tabindex="0" role="region" aria-label="Audit entries">
 	<table class="st-table st-table--cards">
 		<thead>
 			<tr>

@@ -146,14 +146,14 @@
 		margin-bottom: 1.25rem;
 	}
 	.login__word {
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 118%;
 		font-size: 19px;
 		font-weight: 700;
 	}
 	.login__title {
 		margin: 0 0 0.75rem;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 118%;
 		font-size: 2.3rem;
 		font-weight: 700;

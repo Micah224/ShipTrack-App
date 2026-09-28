@@ -190,9 +190,15 @@ recognition, clarity, stillness, delight, confidence, calm, resolved. No act
 disagreed with the curve. The peak is the largest change of ground on the page
 (the only lime band) and the tallest act.
 
-Not verified: the console's actions against a live database (markup changed,
-server code did not, and the form fields were diffed against the previous
-version), real screen readers, and Safari.
+Review rounds changed three server reads, and each was checked without
+Neon: the overview's expiry count (licences past expiry and grace, which
+nothing stores as EXPIRED) ran on PGlite against the repository's own
+migrations with seeded licences; "latest" now comes from the updater's own
+`latestRelease()`; and `SUPPORT_EMAIL` was rendered set and unset.
+
+Not verified: the console's actions against a live database (their server code
+is unchanged, and the form fields were diffed against the previous version),
+real screen readers, and Safari.
 
 ## Known gap
 

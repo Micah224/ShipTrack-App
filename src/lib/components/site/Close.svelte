@@ -49,7 +49,7 @@
 		border: 3px double var(--ink);
 		color: var(--ink);
 		transform: rotate(-7deg);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		text-transform: uppercase;
 	}
 	.stamp__top,
@@ -60,7 +60,7 @@
 	.stamp__word {
 		padding: 0.2rem 0;
 		border-block: 1.5px solid var(--ink);
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 140%;
 		font-size: 2.1rem;
 		font-weight: 800;

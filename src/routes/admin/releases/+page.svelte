@@ -134,13 +134,13 @@
 		display: grid;
 		color: var(--ink-faint);
 		transform: rotate(-90deg);
-		transition: transform 160ms var(--ease-out);
+		transition: transform 160ms var(--st-ease-out);
 	}
 	.release[open] .release__chevron {
 		transform: none;
 	}
 	.release__version {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 1.2rem;
 		font-weight: 700;
 	}
@@ -198,7 +198,7 @@
 		text-underline-offset: 3px;
 	}
 	.prose :global(code) {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 0.92em;
 	}
 	.release__meta {
@@ -214,7 +214,7 @@
 	}
 	.release__meta dt {
 		color: var(--ink-faint);
-		font: 400 11px/1.6 var(--font-mono);
+		font: 400 11px/1.6 var(--st-font-mono);
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
 	}

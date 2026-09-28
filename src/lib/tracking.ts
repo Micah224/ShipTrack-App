@@ -14,6 +14,30 @@
 
 const SHAPE = /^[A-Z0-9]+-[A-Z0-9]+-\d{8}-\d{6}-[A-Z0-9]{2}$/;
 
+/*
+ * PHP's trim() strips only its default list (space, tab, newline, carriage
+ * return, NUL, vertical tab) and strtoupper() touches only ASCII a-z. The
+ * JavaScript built-ins are Unicode-aware, so a number pasted with a trailing
+ * non-breaking space, or typed with a dotless i, would pass here and fail in
+ * the plugin. These two keep the port byte-for-byte with hasValidChecksum.
+ */
+const PHP_TRIM = new Set([' ', '\t', '\n', '\r', '\0', '\v']);
+
+/** How many characters PHP's trim() would strip from the start of a value. */
+export function leadingTrim(value: string): number {
+	let start = 0;
+	while (start < value.length && PHP_TRIM.has(value[start])) start++;
+	return start;
+}
+
+/** Trims and upper-cases a typed number exactly as the plugin's PHP does. */
+export function normalise(value: string): string {
+	const start = leadingTrim(value);
+	let end = value.length;
+	while (end > start && PHP_TRIM.has(value[end - 1])) end--;
+	return value.slice(start, end).replace(/[a-z]/g, (char) => char.toUpperCase());
+}
+
 /** '0'-'9' => 0..9, 'A'-'Z' => 10..35, anything else => 0, as in the plugin. */
 function codePoint(char: string): number {
 	const code = char.charCodeAt(0);
@@ -43,7 +67,9 @@ function luhnCheckChar(input: string): string {
 
 /** The two-character check pair for the segments preceding it. */
 export function checkPair(payload: string): string {
-	const alnum = payload.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+	const alnum = payload
+		.replace(/[^A-Za-z0-9]/g, '')
+		.replace(/[a-z]/g, (char) => char.toUpperCase());
 	const c1 = luhnCheckChar(alnum);
 	return c1 + luhnCheckChar(alnum + c1);
 }
@@ -62,7 +88,7 @@ export type Verdict =
  * demo shows, because that is the part a visitor finds convincing.
  */
 export function verify(trackingNumber: string): Verdict {
-	const tn = trackingNumber.trim().toUpperCase();
+	const tn = normalise(trackingNumber);
 	if (!SHAPE.test(tn)) return { state: 'malformed' };
 
 	const cut = tn.lastIndexOf('-');

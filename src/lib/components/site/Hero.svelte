@@ -123,7 +123,7 @@
 	.plane {
 		position: absolute;
 		will-change: transform;
-		animation: arrive 900ms var(--ease-out) both;
+		animation: arrive 900ms var(--st-ease-out) both;
 	}
 	.plane--chart {
 		inset: 0;

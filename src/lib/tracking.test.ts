@@ -50,6 +50,23 @@ describe('verify agrees with hasValidChecksum', () => {
 		expect(verify('').state).toBe('malformed');
 	});
 
+	/*
+	 * Normalised the way PHP does it, not the way JavaScript does: verdicts
+	 * below are hasValidChecksum's own, run against the plugin class.
+	 */
+	it('trims and upper-cases exactly as PHP trim() and strtoupper() do', () => {
+		// Only PHP's default trim list is stripped, NUL and vertical tab included.
+		expect(verify(`${good}\0`).state).toBe('valid');
+		expect(verify(` \t${good}\n\x0B`).state).toBe('valid');
+		// A pasted non-breaking space or byte-order mark is not whitespace to PHP.
+		expect(verify(`${good}\u00A0`).state).toBe('malformed');
+		expect(verify(`\uFEFF${good}`).state).toBe('malformed');
+		// Only ASCII a-z is upper-cased: a dotless i does not become an I.
+		expect(verify(`\u0131${good.slice(1)}`).state).toBe('malformed');
+		// And a full-width digit is not a digit.
+		expect(verify('GBR-LDN-2026092\uFF18-000483-A6').state).toBe('malformed');
+	});
+
 	it('withCheck round-trips through verify', () => {
 		expect(withCheck('GBR-LDN-20260928-000483')).toBe(good);
 		expect(verify(withCheck('CMR-DLA-20260101-000042')).state).toBe('valid');

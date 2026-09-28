@@ -73,7 +73,7 @@
 		height: 100%;
 	}
 	.chart__code {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 13px;
 		letter-spacing: 0.08em;
 		fill: var(--site-ink-soft);

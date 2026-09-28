@@ -54,7 +54,7 @@
 		text-decoration: none;
 	}
 	.nav__word {
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 118%;
 		font-size: 18px;
 		font-weight: 700;
@@ -65,7 +65,7 @@
 		padding: 1px 5px;
 		background: var(--ink);
 		color: var(--bg);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.08em;
@@ -79,7 +79,7 @@
 	.nav__link {
 		color: var(--ink-soft);
 		text-decoration: none;
-		transition: color 140ms var(--ease-out);
+		transition: color 140ms var(--st-ease-out);
 	}
 	.nav__link:hover {
 		color: var(--ink);

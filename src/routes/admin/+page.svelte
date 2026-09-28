@@ -111,13 +111,19 @@
 	<div class="figure">
 		<p class="st-label">Seat utilisation</p>
 		<p class="figure__value">{utilisation}<span class="figure__unit">%</span></p>
+		<!--
+			Used can exceed capacity: capacity counts active licences only, while
+			seats on revoked or suspended ones stay bound. valuetext says what the
+			screen says, and the maximum never collapses onto the minimum.
+		-->
 		<div
 			class="meter"
 			role="meter"
 			aria-label="Production seats in use"
 			aria-valuenow={stats.seats.used}
 			aria-valuemin={0}
-			aria-valuemax={Math.max(stats.seats.capacity, stats.seats.used)}
+			aria-valuemax={Math.max(1, stats.seats.capacity, stats.seats.used)}
+			aria-valuetext="{stats.seats.used} of {stats.seats.capacity} production seats, {utilisation}%"
 		>
 			<span style:width="{Math.min(utilisation, 100)}%"></span>
 		</div>
@@ -234,7 +240,7 @@
 		line-height: 1;
 	}
 	.figure__value--code {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 2.1rem;
 		font-weight: 700;
 		letter-spacing: 0;
@@ -345,7 +351,7 @@
 		padding: 1.2rem 1.25rem 1.3rem;
 		color: var(--ink);
 		text-decoration: none;
-		transition: background-color 140ms var(--ease-out);
+		transition: background-color 140ms var(--st-ease-out);
 	}
 	.tile__link:hover {
 		background: var(--sheet-2);
@@ -357,7 +363,7 @@
 		color: var(--ink-soft);
 	}
 	.tile__label {
-		font: 400 12px/1.2 var(--font-mono);
+		font: 400 12px/1.2 var(--st-font-mono);
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
 	}

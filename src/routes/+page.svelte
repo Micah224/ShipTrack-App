@@ -14,8 +14,9 @@
 	let { data } = $props();
 
 	/*
-	 * Facts, not claims: minimums from the release metadata the update server
-	 * hands WordPress, and the seat rule from the classifier.
+	 * Facts, not claims. The minimums are written here and in the FAQ by hand;
+	 * they match the defaults the update server hands WordPress (min_wp and
+	 * min_php on each release) and must be changed with them.
 	 */
 	const specs = [
 		{ label: 'WordPress', value: '6.5 or later' },

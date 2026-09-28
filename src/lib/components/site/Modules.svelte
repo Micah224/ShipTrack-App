@@ -3,11 +3,10 @@
 	import { reveal } from '$lib/ui/motion';
 
 	/*
-	 * What is in the box. Every sentence here maps to a capability flag in
-	 * domain/tiers.ts or to behaviour in the plugin; the tier qualifiers are
-	 * deliberately vague ("on the tiers that include them") because the pricing
-	 * table below states them exactly, from the same matrix the licence server
-	 * grants from.
+	 * What is in the box: only what the plugin does today, checked against its
+	 * code (RoutingService, StatusMachine, TemplateController, the email channel,
+	 * AuditController, the branding settings). Entitlement flags the plugin does
+	 * not yet read are not described here as working features.
 	 */
 	const modules: { code: string; icon: IconName; title: string; body: string }[] = [
 		{
@@ -25,26 +24,26 @@
 		{
 			code: 'M03',
 			icon: 'lifecycle',
-			title: 'A lifecycle that cannot be skipped',
-			body: 'Shipments move from pending to delivered through fixed steps, so the history a customer reads is one that actually happened.'
+			title: 'A lifecycle with rules',
+			body: 'Shipments move only along the transitions the plugin allows. A held parcel cannot jump straight to delivered, so the history a customer reads is one that happened.'
 		},
 		{
 			code: 'M04',
 			icon: 'bell',
 			title: 'Customers hear first',
-			body: 'Standard notifications on every licence, with templates and custom channels on the tiers that include them.'
+			body: 'Email notifications when a shipment changes status, written from templates you can edit and preview.'
 		},
 		{
 			code: 'M05',
 			icon: 'audit',
 			title: 'Every change on the record',
-			body: 'An audit trail on every licence, with longer retention and export on the tiers that include them.'
+			body: 'An audit log of what changed and who changed it, filterable by action and date.'
 		},
 		{
 			code: 'M06',
 			icon: 'brush',
 			title: 'Your name on the page',
-			body: 'White-label the tracking page, or run it on your own domain, so it reads as part of your site.'
+			body: "Your company name, logo and colours on the tracking page, so it reads as part of your site."
 		}
 	];
 </script>
@@ -108,8 +107,8 @@
 		border-bottom: 1px solid var(--rule);
 		background: var(--bg);
 		transition:
-			clip-path 700ms var(--ease-out),
-			background-color 200ms var(--ease-out);
+			clip-path 700ms var(--st-ease-out),
+			background-color 200ms var(--st-ease-out);
 		transition-delay: calc(var(--i) * 80ms), 0ms;
 	}
 	.module:hover {
@@ -139,7 +138,7 @@
 	}
 	.module__title {
 		margin: 0;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 110%;
 		font-size: 1.35rem;
 		font-weight: 700;

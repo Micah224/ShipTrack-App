@@ -51,8 +51,10 @@
 	}
 
 	/*
-	 * The seat classifier's actual rules (domain/site.ts), in the order it
-	 * applies them. A buyer sizing a licence needs these more than a slogan.
+	 * The seat classifier's actual rules (domain/site.ts), most common first.
+	 * It checks them the other way round: local, managed-host preview, staging,
+	 * then anything left is a live site. A buyer sizing a licence needs these
+	 * more than a slogan.
 	 */
 	const environments = [
 		{ where: 'A live site', seat: '1 seat', how: 'Any domain not matched below' },
@@ -215,7 +217,7 @@
 		height: 26px;
 		display: grid;
 		place-items: center;
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 11px;
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
@@ -235,7 +237,7 @@
 	}
 	.plan__name {
 		margin: 0;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 112%;
 		font-size: 1.9rem;
 		font-weight: 700;
@@ -308,7 +310,7 @@
 	.seats__title,
 	.compare__title {
 		margin: 0 0 1rem;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 110%;
 		font-size: 1.5rem;
 		font-weight: 700;
@@ -327,7 +329,7 @@
 		font-weight: 600;
 	}
 	.seats__seat {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 0.9rem;
 	}
 	.seats__seat--free {
@@ -374,7 +376,7 @@
 	}
 	.compare__table thead th {
 		border-bottom: 1px solid var(--rule);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 12px;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
@@ -387,7 +389,7 @@
 	.compare__group th {
 		padding-top: 1.2rem;
 		background: var(--bg);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 11px;
 		letter-spacing: 0.12em;
 		text-align: left;
@@ -423,8 +425,14 @@
 		.seats__how {
 			grid-column: 1 / -1;
 		}
+		/* Visually hidden, not display: none, so the column keeps its header for screen readers. */
 		.seats__row--head span:last-child {
-			display: none;
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
 		}
 	}
 </style>

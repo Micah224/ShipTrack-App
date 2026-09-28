@@ -49,8 +49,13 @@
 </section>
 
 <style>
+	/*
+	 * Finished by default. The scrollProgress attachment writes the real value
+	 * the moment it mounts, so without JavaScript, or before hydration, every
+	 * leg is drawn and readable rather than hidden by CSS alone.
+	 */
 	.route {
-		--p: 0;
+		--p: 1;
 		padding: 6rem 1.5rem 6.5rem;
 	}
 	.route__head {
@@ -123,7 +128,7 @@
 		inset: 2px;
 		background: var(--mint);
 		opacity: clamp(0, (var(--p) * 4 - var(--i) + 0.01) * 1000, 1);
-		transition: opacity 240ms var(--ease-out);
+		transition: opacity 240ms var(--st-ease-out);
 	}
 	.leg__track {
 		position: absolute;
@@ -164,7 +169,7 @@
 	.leg__mode {
 		grid-row: 3;
 		margin-top: 1.1rem;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 115%;
 		font-size: 1.35rem;
 		font-weight: 700;

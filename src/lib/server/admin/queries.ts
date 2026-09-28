@@ -49,25 +49,43 @@ export async function dashboardStats(): Promise<DashboardStats> {
 			latestRelease()
 		]);
 
-	const staleRow = await db
-		.select({ stale: sql<number>`count(*)::int` })
-		.from(activations)
-		.where(
-			and(
-				isNull(activations.releasedAt),
-				sql`${activations.lastHeartbeat} < now() - make_interval(days => ${STALE_DAYS})`
+	const [staleRow, lapsedRow] = await Promise.all([
+		db
+			.select({ stale: sql<number>`count(*)::int` })
+			.from(activations)
+			.where(
+				and(
+					isNull(activations.releasedAt),
+					sql`${activations.lastHeartbeat} < now() - make_interval(days => ${STALE_DAYS})`
+				)
+			),
+		/*
+		 * Expiry is computed, never stored: nothing writes status = 'EXPIRED'.
+		 * licenseState() calls an ACTIVE licence expired once it is past its
+		 * expiry date and its grace period, so count those here too, or the
+		 * overview reports "Expired 0" while every one of them is being refused.
+		 */
+		db
+			.select({ lapsed: sql<number>`count(*)::int` })
+			.from(licenses)
+			.where(
+				and(
+					eq(licenses.status, 'ACTIVE'),
+					sql`${licenses.expiresAt} + make_interval(days => ${licenses.gracePeriodDays}) < now()`
+				)
 			)
-		);
+	]);
 
 	const status = (name: string) =>
 		statusRows.find((row) => row.status === name)?.count ?? 0;
+	const lapsed = lapsedRow[0]?.lapsed ?? 0;
 
 	return {
 		licenses: {
 			total: statusRows.reduce((sum, row) => sum + row.count, 0),
-			active: status('ACTIVE'),
+			active: Math.max(0, status('ACTIVE') - lapsed),
 			revoked: status('REVOKED'),
-			expired: status('EXPIRED'),
+			expired: status('EXPIRED') + lapsed,
 			suspended: status('SUSPENDED')
 		},
 		byTier: tierRows.map((row) => ({ tier: row.tier, count: row.count })),

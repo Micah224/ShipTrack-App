@@ -81,7 +81,7 @@
 	}
 	.bar__tag {
 		color: var(--con-good);
-		font: 400 10px/1 var(--font-mono);
+		font: 400 10px/1 var(--st-font-mono);
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
 	}
@@ -103,7 +103,7 @@
 		min-width: 3px;
 		border-radius: 0 4px 4px 0;
 		background: var(--con-dim);
-		transition: background-color 140ms var(--ease-out);
+		transition: background-color 140ms var(--st-ease-out);
 	}
 	.bar--em .bar__fill {
 		background: var(--con-good);

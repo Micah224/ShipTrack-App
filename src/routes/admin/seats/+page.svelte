@@ -63,7 +63,9 @@
 	<p class="notice" role="status">{form.message}</p>
 {/if}
 
-<div class="st-table-wrap">
+<!-- Scrolls sideways when a row is wide, so it takes focus for keyboard scrolling. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="st-table-wrap" tabindex="0" role="region" aria-label="Activations">
 	<table class="st-table st-table--cards">
 		<thead>
 			<tr>

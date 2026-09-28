@@ -125,7 +125,7 @@
 		text-decoration: none;
 	}
 	.bar__word {
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 118%;
 		font-size: 17px;
 		font-weight: 700;
@@ -134,7 +134,7 @@
 		padding: 2px 6px;
 		border: 1px solid var(--rule);
 		color: var(--ink-soft);
-		font: 400 10px/1.2 var(--font-mono);
+		font: 400 10px/1.2 var(--st-font-mono);
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
 	}
@@ -153,7 +153,7 @@
 		color: var(--ink-soft);
 		font-size: 14px;
 		text-decoration: none;
-		transition: color 140ms var(--ease-out);
+		transition: color 140ms var(--st-ease-out);
 	}
 	.tab:hover {
 		color: var(--ink);
@@ -221,7 +221,11 @@
 		padding: 2rem 1.25rem 4rem;
 	}
 
-	@media (max-width: 860px) {
+	/*
+	 * 960, not 860: the desktop bar (mark, five tabs, sign out) needs about
+	 * 925px, so at 861 to 924 it would push Sign out off the screen.
+	 */
+	@media (max-width: 960px) {
 		/*
 		 * No backdrop-filter here: it makes the bar the containing block for
 		 * its fixed descendants, and the tab bar below would then pin itself
@@ -257,7 +261,7 @@
 			padding: 0.4rem 0;
 		}
 		.tab__label {
-			font: 400 10px/1 var(--font-mono);
+			font: 400 10px/1 var(--st-font-mono);
 			letter-spacing: 0.06em;
 			text-transform: uppercase;
 		}

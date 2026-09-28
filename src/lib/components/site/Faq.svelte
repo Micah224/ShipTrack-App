@@ -97,7 +97,7 @@
 		display: none;
 	}
 	.faq__chev {
-		transition: transform 200ms var(--ease-out);
+		transition: transform 200ms var(--st-ease-out);
 	}
 	.faq__item[open] .faq__chev {
 		transform: rotate(180deg);

@@ -78,7 +78,7 @@
 	}
 	.anatomy__value,
 	.anatomy__dash {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: clamp(1.15rem, 2vw, 1.6rem);
 		font-weight: 700;
 		line-height: 1;

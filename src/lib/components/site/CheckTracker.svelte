@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { verify, withCheck } from '$lib/tracking';
+	import { leadingTrim, normalise, verify, withCheck } from '$lib/tracking';
 	import Lifecycle from './Lifecycle.svelte';
 
 	/*
@@ -21,9 +21,9 @@
 	 * number has five segments; otherwise they would point at the wrong text.
 	 */
 	const slots = $derived.by(() => {
-		const parts = value.trim().toUpperCase().split('-');
+		const parts = normalise(value).split('-');
 		if (parts.length !== 5 || parts.some((part) => part.length === 0)) return [];
-		const lead = value.length - value.trimStart().length;
+		const lead = leadingTrim(value);
 		let at = lead;
 		return parts.map((part, i) => {
 			const slot = { label: LABELS[i], at, len: part.length, check: i === 4 };
@@ -33,7 +33,7 @@
 	});
 
 	function parts(): string[] {
-		const current = value.trim().toUpperCase();
+		const current = normalise(value);
 		return (verify(current).state === 'malformed' ? EXAMPLE : current).split('-');
 	}
 
@@ -238,7 +238,7 @@
 	}
 	.field__input,
 	.field__slots {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: min(68px, calc(100cqi / 16.8));
 		font-weight: 700;
 		letter-spacing: 0;
@@ -289,7 +289,7 @@
 		bottom: 100%;
 		left: 0;
 		margin-bottom: 0.35rem;
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 11px;
 		font-weight: 400;
 		letter-spacing: 0.08em;
@@ -299,14 +299,14 @@
 	}
 	.field__slot--check {
 		background: var(--mark-bg, transparent);
-		transition: background-color 180ms var(--ease-out);
+		transition: background-color 180ms var(--st-ease-out);
 	}
 	.field[data-state='valid'] .field__slot--check {
 		--mark-bg: var(--mint);
 	}
 	.field[data-state='mismatch'] .field__slot--check {
 		--mark-bg: var(--amber);
-		animation: knock 320ms var(--ease-out);
+		animation: knock 320ms var(--st-ease-out);
 	}
 	@keyframes knock {
 		30% {
@@ -335,7 +335,7 @@
 		gap: 0.5rem;
 		padding: 6px 10px;
 		border: 1.5px solid var(--ink);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 13px;
 		font-weight: 700;
 		letter-spacing: 0.04em;

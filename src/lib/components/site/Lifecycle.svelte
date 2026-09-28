@@ -97,11 +97,11 @@
 		font-size: 0.95rem;
 	}
 	.life[data-active='true'] .life__node {
-		animation: light 420ms var(--ease-out) both;
+		animation: light 420ms var(--st-ease-out) both;
 		animation-delay: calc(var(--i) * 140ms);
 	}
 	.life[data-active='true'] .life__path li:not(:last-child)::after {
-		animation: connect 420ms var(--ease-out) both;
+		animation: connect 420ms var(--st-ease-out) both;
 		animation-delay: calc(var(--i) * 140ms + 80ms);
 	}
 	.life[data-active='false'] .life__path {

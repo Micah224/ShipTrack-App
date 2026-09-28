@@ -111,7 +111,7 @@
 	}
 	.point__title {
 		margin: 0;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 110%;
 		font-size: 1.3rem;
 		font-weight: 700;

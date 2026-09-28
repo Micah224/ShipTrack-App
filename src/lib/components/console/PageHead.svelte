@@ -42,7 +42,7 @@
 	}
 	.head__title {
 		margin: 0;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 118%;
 		font-weight: 700;
 		font-size: clamp(1.9rem, 3.2vw, 2.7rem);

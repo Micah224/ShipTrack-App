@@ -85,7 +85,7 @@
 		padding: 0.8rem 1rem;
 		border: 1px dashed var(--rule);
 		background: var(--bg);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 1.05rem;
 		letter-spacing: 0.06em;
 		overflow-wrap: anywhere;

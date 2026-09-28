@@ -89,7 +89,7 @@
 		border-bottom: 1px dashed var(--site-rule);
 	}
 	.tag__number {
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: clamp(13px, 1.25vw, 16px);
 		font-weight: 700;
 		letter-spacing: 0.02em;

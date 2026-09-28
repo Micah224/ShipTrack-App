@@ -137,7 +137,7 @@
 	}
 	.foot__word {
 		margin: 1rem 0 0.25rem;
-		font-family: var(--font-display);
+		font-family: var(--st-font-display);
 		font-stretch: 118%;
 		font-size: 1.3rem;
 		font-weight: 700;
@@ -156,7 +156,7 @@
 	}
 	.foot__col a {
 		color: var(--ink);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 13px;
 		letter-spacing: 0.04em;
 		text-decoration: none;
@@ -171,7 +171,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		margin: 1rem 0 0;
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 13px;
 	}
 	.foot__status i {
@@ -198,7 +198,7 @@
 		margin: 0;
 		padding: 1rem 1.5rem 1.4rem;
 		color: var(--ink-faint);
-		font-family: var(--font-mono);
+		font-family: var(--st-font-mono);
 		font-size: 12px;
 		text-align: right;
 	}
