@@ -26,10 +26,17 @@ export async function dashboardStats(): Promise<DashboardStats> {
 		await Promise.all([
 			db.select({ tier: licenses.tier, count: count() }).from(licenses).groupBy(licenses.tier),
 			db.select({ status: licenses.status, count: count() }).from(licenses).groupBy(licenses.status),
+			// Seats of licences that are in force: ACTIVE and not past expiry plus
+			// grace, the same boundary the expired count below uses.
 			db
 				.select({ capacity: sql<number>`coalesce(sum(${licenses.maxSeats}), 0)::int` })
 				.from(licenses)
-				.where(eq(licenses.status, 'ACTIVE')),
+				.where(
+					and(
+						eq(licenses.status, 'ACTIVE'),
+						sql`(${licenses.expiresAt} is null or ${licenses.expiresAt} + make_interval(days => ${licenses.gracePeriodDays}) >= now())`
+					)
+				),
 			db
 				.select({ used: sql<number>`count(*)::int` })
 				.from(activations)

@@ -19,10 +19,21 @@ describe('supportEmail', () => {
 	it('returns a plain address, trimmed', () => {
 		process.env.SUPPORT_EMAIL = '  help@example.com ';
 		expect(supportEmail()).toBe('help@example.com');
+		process.env.SUPPORT_EMAIL = 'support@mail.example.co.uk';
+		expect(supportEmail()).toBe('support@mail.example.co.uk');
 	});
 
 	it('refuses anything that would publish a broken mailto link', () => {
-		for (const bad of ['help', 'help@', '@example.com', 'help@example', 'a b@example.com']) {
+		for (const bad of [
+			'help',
+			'help@',
+			'@example.com',
+			'help@example',
+			'a b@example.com',
+			'help@example..com',
+			'help@.example.com',
+			'help@example.com.'
+		]) {
 			process.env.SUPPORT_EMAIL = bad;
 			expect(supportEmail()).toBeNull();
 		}

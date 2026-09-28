@@ -10,5 +10,6 @@ import { optional } from './env.ts';
  */
 export function supportEmail(): string | null {
 	const value = optional('SUPPORT_EMAIL').trim();
-	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;
+	// Every domain label non-empty: help@example..com would be an undeliverable link.
+	return /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value) ? value : null;
 }

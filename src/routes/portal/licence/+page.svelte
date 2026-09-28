@@ -47,10 +47,15 @@
 	/*
 	 * A past expiry date reads as history, not a deadline: "Expired", then when
 	 * the grace period ends, counted the way licenseState() counts it (UTC days).
+	 * Revocation and suspension bypass grace entirely, so neither is offered it.
 	 */
 	const expiry = $derived.by(() => {
 		if (!licence?.expiresAt) return { label: 'Expires', sub: null };
 		const expires = new Date(licence.expiresAt);
+		const label = expires.getTime() >= Date.now() ? 'Expires' : 'Expired';
+		if (licence.state === 'REVOKED' || licence.state === 'SUSPENDED') {
+			return { label, sub: `No grace period while ${licence.state.toLowerCase()}` };
+		}
 		// UTC days are always 86,400,000 ms, so this matches setUTCDate(+days).
 		const graceEnds = new Date(expires.getTime() + licence.gracePeriodDays * 86_400_000);
 		const now = Date.now();
