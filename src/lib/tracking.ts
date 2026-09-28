@@ -1,0 +1,80 @@
+/*
+ * The plugin's tracking-number check pair, ported for the marketing page.
+ *
+ * ShipTrack numbers are `{COUNTRY}-{BRANCH}-{YYYYMMDD}-{SEQ6}-{CHK2}`, and the
+ * last two characters are a Luhn mod-36 check pair over everything before them
+ * (`TrackingNumberService::checksum` in ShipTrack-Pro). The public lookup form
+ * uses it to reject a mistyped number before the database is asked.
+ *
+ * This is a port, not a re-imagining: the landing page runs it live so a
+ * visitor can watch a typo get caught, and a demo that disagreed with the
+ * plugin would be demonstrating something the product does not do. The test
+ * file pins it to vectors computed by the PHP class itself.
+ */
+
+const SHAPE = /^[A-Z0-9]+-[A-Z0-9]+-\d{8}-\d{6}-[A-Z0-9]{2}$/;
+
+/** '0'-'9' => 0..9, 'A'-'Z' => 10..35, anything else => 0, as in the plugin. */
+function codePoint(char: string): number {
+	const code = char.charCodeAt(0);
+	if (code >= 48 && code <= 57) return code - 48;
+	if (code >= 65 && code <= 90) return code - 65 + 10;
+	return 0;
+}
+
+function fromCodePoint(value: number): string {
+	return value < 10 ? String.fromCharCode(value + 48) : String.fromCharCode(value - 10 + 65);
+}
+
+/** The single base-36 character that makes `input + char` validate. */
+function luhnCheckChar(input: string): string {
+	const n = 36;
+	let factor = 2;
+	let sum = 0;
+	for (let i = input.length - 1; i >= 0; i--) {
+		let addend = factor * codePoint(input[i]);
+		factor = factor === 2 ? 1 : 2;
+		addend = Math.floor(addend / n) + (addend % n);
+		sum += addend;
+	}
+	return fromCodePoint((n - (sum % n)) % n);
+}
+
+/** The two-character check pair for the segments preceding it. */
+export function checkPair(payload: string): string {
+	const alnum = payload.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+	const c1 = luhnCheckChar(alnum);
+	return c1 + luhnCheckChar(alnum + c1);
+}
+
+export type Verdict =
+	| { state: 'valid'; payload: string; check: string }
+	| { state: 'mismatch'; payload: string; typed: string; expected: string }
+	| { state: 'malformed' };
+
+/**
+ * What the public lookup would decide about a whole number.
+ *
+ * Mirrors `hasValidChecksum`: trimmed, upper-cased, shape-checked, then the
+ * trailing pair compared against the recomputed one. It additionally reports
+ * the expected pair on a mismatch, which the plugin keeps to itself and the
+ * demo shows, because that is the part a visitor finds convincing.
+ */
+export function verify(trackingNumber: string): Verdict {
+	const tn = trackingNumber.trim().toUpperCase();
+	if (!SHAPE.test(tn)) return { state: 'malformed' };
+
+	const cut = tn.lastIndexOf('-');
+	const payload = tn.slice(0, cut);
+	const typed = tn.slice(cut + 1);
+	const expected = checkPair(payload);
+
+	return typed === expected
+		? { state: 'valid', payload, check: typed }
+		: { state: 'mismatch', payload, typed, expected };
+}
+
+/** A complete, valid number for a payload. */
+export function withCheck(payload: string): string {
+	return `${payload}-${checkPair(payload)}`;
+}

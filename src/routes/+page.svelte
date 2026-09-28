@@ -1,162 +1,162 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
-	import { FEATURE_COPY, GROUP_ORDER, featureLabel } from '$lib/features';
+	import Anatomy from '$lib/components/site/Anatomy.svelte';
+	import Assurance from '$lib/components/site/Assurance.svelte';
+	import CheckTracker from '$lib/components/site/CheckTracker.svelte';
+	import Close from '$lib/components/site/Close.svelte';
+	import Faq from '$lib/components/site/Faq.svelte';
+	import Hero from '$lib/components/site/Hero.svelte';
+	import Modules from '$lib/components/site/Modules.svelte';
+	import Pricing from '$lib/components/site/Pricing.svelte';
+	import RouteLine from '$lib/components/site/RouteLine.svelte';
+	import SiteFooter from '$lib/components/site/SiteFooter.svelte';
+	import SiteNav from '$lib/components/site/SiteNav.svelte';
 
 	let { data } = $props();
 
-	const tiers = $derived(data.tiers);
-
-	/** Every flag any tier grants, grouped, in the order defined in features.ts. */
-	const rows = $derived.by(() => {
-		const all = [...new Set(tiers.flatMap((t) => t.features))];
-		return GROUP_ORDER.flatMap((group) => {
-			const flags = all.filter((f) => FEATURE_COPY[f]?.group === group);
-			return flags.length ? [{ group, flags }] : [];
-		});
-	});
-
-	function cap(value: number | null, unlimited = 'Unlimited'): string {
-		return value === null ? unlimited : String(value);
-	}
+	/*
+	 * Facts, not claims: minimums from the release metadata the update server
+	 * hands WordPress, and the seat rule from the classifier.
+	 */
+	const specs = [
+		{ label: 'WordPress', value: '6.5 or later' },
+		{ label: 'PHP', value: '8.1 or later' },
+		{ label: 'Updates', value: 'Through the WordPress updater' },
+		{ label: 'Seats', value: 'Production sites only' }
+	];
 </script>
 
 <svelte:head>
-	<title>ShipTrack Pro — shipment tracking for WordPress</title>
+	<title>ShipTrack Pro · Shipment tracking for WordPress</title>
 	<meta
 		name="description"
-		content="Road, rail, sea and air shipment tracking for WordPress, with a public tracking page your customers can use and licence management built in."
+		content="Road, rail, sea and air shipment tracking for WordPress, with a public tracking page your customers can follow, self-checking tracking numbers, and licensing that degrades instead of breaking."
 	/>
 </svelte:head>
 
-<div class="flex flex-col">
-	<!-- Hero -->
-	<section class="bg-surface-100-900 border-surface-200-800 border-b">
-		<div class="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-16 md:py-24">
-			<p class="text-primary-600-400 text-sm font-semibold tracking-wide uppercase">
-				WordPress plugin
-			</p>
-			<h1 class="h1 max-w-3xl">Shipment tracking your customers can actually follow.</h1>
-			<p class="max-w-2xl text-lg opacity-80">
-				ShipTrack Pro adds road, rail, sea and air shipments to WordPress, with a public tracking
-				page, notifications and an audit trail. Licences activate in a minute and update through
-				WordPress's own plugin updater.
-			</p>
-			<div class="flex flex-wrap gap-3">
-				<a href="#pricing" class="btn preset-filled-primary-500">See pricing</a>
-				<a href={resolve('/portal')} class="btn preset-outlined-surface-500">
-					Manage my licence
-				</a>
-			</div>
-		</div>
-	</section>
+<div class="st-site page">
+	<a class="skip" href="#main">Skip to content</a>
+	<SiteNav />
 
-	<!-- Pricing -->
-	<section id="pricing" class="mx-auto w-full max-w-5xl px-6 py-16">
-		<h2 class="h3 mb-2">Pricing</h2>
-		<p class="mb-8 opacity-70">
-			Every licence includes updates for the year and the public tracking page. Seats are
-			production sites — staging, local and managed-host previews never consume one.
-		</p>
+	<div class="sheet">
+		<main id="main">
+			<Hero />
 
-		<div class="grid gap-6 md:grid-cols-3">
-			{#each tiers as tier (tier.tier)}
-				<div
-					class="card flex flex-col gap-4 p-6 {tier.tier === 'PROFESSIONAL'
-						? 'preset-outlined-primary-500'
-						: 'preset-outlined-surface-200-800'}"
-				>
-					<div>
-						<div class="flex items-center gap-2">
-							<h3 class="h4">{tier.name}</h3>
-							{#if tier.tier === 'PROFESSIONAL'}
-								<span class="badge preset-filled-primary-500 text-xs">Most chosen</span>
-							{/if}
-						</div>
-						<p class="mt-2 flex items-baseline gap-1">
-							<span class="text-3xl font-bold">{tier.price}</span>
-							<span class="text-sm opacity-60">{tier.cadence}</span>
-						</p>
-					</div>
+			<ul class="specs" aria-label="Requirements and licensing">
+				{#each specs as spec (spec.label)}
+					<li>
+						<span class="st-label">{spec.label}</span>
+						<span class="specs__value">{spec.value}</span>
+					</li>
+				{/each}
+			</ul>
 
-					<p class="text-sm opacity-80">{tier.pitch}</p>
-
-					<dl class="border-surface-200-800 grid grid-cols-2 gap-2 border-t pt-4 text-sm">
-						<dt class="opacity-60">Production sites</dt>
-						<dd class="text-right font-semibold">{tier.seats}</dd>
-						<dt class="opacity-60">Custom branches</dt>
-						<dd class="text-right font-semibold">{cap(tier.limits.branches)}</dd>
-						<dt class="opacity-60">Audit retention</dt>
-						<dd class="text-right font-semibold">
-							{tier.limits.auditRetentionDays === null
-								? 'Full'
-								: tier.limits.auditRetentionDays === 0
-									? 'Current only'
-									: `${tier.limits.auditRetentionDays} days`}
-						</dd>
-					</dl>
-				</div>
-			{/each}
-		</div>
-	</section>
-
-	<!-- Comparison -->
-	<section class="bg-surface-100-900 border-surface-200-800 border-y">
-		<div class="mx-auto w-full max-w-5xl px-6 py-16">
-			<h2 class="h3 mb-2">What each tier includes</h2>
-			<p class="mb-8 text-sm opacity-70">
-				Generated from the entitlement matrix the licence server issues from, so this table cannot
-				disagree with what your site actually receives.
-			</p>
-
-			<div class="overflow-x-auto">
-				<table class="table w-full min-w-[36rem]">
-					<thead>
-						<tr>
-							<th class="text-left">Capability</th>
-							{#each tiers as tier (tier.tier)}
-								<th class="text-center">{tier.name}</th>
-							{/each}
-						</tr>
-					</thead>
-					<tbody>
-						{#each rows as row (row.group)}
-							<tr class="bg-surface-200-800">
-								<th colspan={tiers.length + 1} class="text-left text-xs tracking-wide uppercase">
-									{row.group}
-								</th>
-							</tr>
-							{#each row.flags as flag (flag)}
-								<tr>
-									<td>{featureLabel(flag)}</td>
-									{#each tiers as tier (tier.tier)}
-										<td class="text-center">
-											{#if tier.features.includes(flag)}
-												<span class="text-success-600-400" aria-label="Included">✓</span>
-											{:else}
-												<span class="opacity-30" aria-label="Not included">—</span>
-											{/if}
-										</td>
-									{/each}
-								</tr>
-							{/each}
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		</div>
-	</section>
-
-	<!-- Existing customers -->
-	<section class="mx-auto w-full max-w-5xl px-6 py-16">
-		<div class="card preset-outlined-surface-200-800 flex flex-col gap-4 p-8">
-			<h2 class="h4">Already have a licence?</h2>
-			<p class="max-w-2xl opacity-80">
-				Sign in with your licence key to see which sites are using your seats, free one up when you
-				retire a site, and check what your licence includes.
-			</p>
-			<div>
-				<a href={resolve('/portal')} class="btn preset-filled-primary-500">Open the portal</a>
-			</div>
-		</div>
-	</section>
+			<RouteLine />
+			<Anatomy />
+			<CheckTracker />
+			<Modules />
+			<Assurance />
+			<Pricing tiers={data.tiers} />
+			<Faq />
+			<Close />
+		</main>
+		<SiteFooter />
+	</div>
 </div>
+
+<style>
+	.page {
+		min-height: 100vh;
+		/* Beyond the sheet, the margins are hatched, as on a ruled manifest. */
+		background-color: var(--bg);
+		background-image: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 7px);
+	}
+	.skip {
+		position: absolute;
+		left: 1rem;
+		top: -3rem;
+		z-index: 50;
+		padding: 0.5rem 0.8rem;
+		background: var(--ink);
+		color: var(--bg);
+	}
+	.skip:focus {
+		top: 0.75rem;
+	}
+
+	.sheet {
+		max-width: 1216px;
+		margin: 0 auto;
+		border-inline: 1px solid var(--rule);
+		background: var(--bg);
+	}
+	/* On a phone the sheet meets the screen edge, and the marks would widen the page. */
+	@media (max-width: 1260px) {
+		.sheet {
+			overflow-x: clip;
+		}
+	}
+
+	/*
+	 * Every module after the hero starts on a ruled line, with a registration
+	 * mark where the line meets each edge of the sheet.
+	 */
+	main > :global(section:not(:first-child)) {
+		position: relative;
+		border-top: 1px solid var(--rule);
+	}
+	main > :global(section:not(:first-child))::before,
+	main > :global(section:not(:first-child))::after {
+		content: '';
+		position: absolute;
+		top: -5px;
+		z-index: 2;
+		width: 9px;
+		height: 9px;
+		border: 1px solid var(--rule);
+		background: var(--site-canvas);
+	}
+	main > :global(section:not(:first-child))::before {
+		left: -5px;
+	}
+	main > :global(section:not(:first-child))::after {
+		right: -5px;
+	}
+
+	.specs {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--rule);
+		background-image: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 7px);
+	}
+	.specs li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		padding: 1.2rem 1.5rem;
+		background: color-mix(in oklab, var(--bg) 70%, transparent);
+	}
+	.specs li + li {
+		border-left: 1px dashed var(--rule);
+	}
+	.specs__value {
+		font-weight: 600;
+	}
+
+	@media (max-width: 860px) {
+		.specs {
+			grid-template-columns: 1fr 1fr;
+		}
+		.specs li:nth-child(3) {
+			border-left: 0;
+		}
+		.specs li:nth-child(n + 3) {
+			border-top: 1px dashed var(--rule);
+		}
+		.specs li {
+			padding: 1rem 1.25rem;
+		}
+	}
+</style>
