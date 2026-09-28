@@ -1,15 +1,25 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import PageHead from '$lib/components/console/PageHead.svelte';
+	import SearchBar from '$lib/components/console/SearchBar.svelte';
+	import StateChip, { type Tone } from '$lib/components/console/StateChip.svelte';
+	import Icon from '$lib/ui/Icon.svelte';
 
 	let { data } = $props();
 
-	function tone(action: string): string {
-		if (action.includes('failed') || action.includes('blocked') || action.includes('revoked')) {
-			return 'preset-tonal-error';
+	// Refusals and destruction read as critical, disclosure and capacity as a
+	// warning; everything else is routine and stays neutral.
+	function tone(action: string): Tone {
+		if (
+			action.includes('failed') ||
+			action.includes('blocked') ||
+			action.includes('denied') ||
+			action.includes('revoked')
+		) {
+			return 'crit';
 		}
-		if (action.includes('revealed') || action.includes('seat_limit')) return 'preset-tonal-warning';
-		if (action.startsWith('admin.')) return 'preset-tonal-primary';
-		return 'preset-tonal-surface';
+		if (action.includes('revealed') || action.includes('seat_limit')) return 'warn';
+		return 'neutral';
 	}
 
 	// Built by hand rather than with URLSearchParams: the linter flags the
@@ -17,56 +27,124 @@
 	function query(page: number): string {
 		return data.search ? `q=${encodeURIComponent(data.search)}&page=${page}` : `page=${page}`;
 	}
+
+	function when(value: Date | string): { date: string; time: string } {
+		const d = new Date(value);
+		return {
+			date: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }),
+			time: d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+		};
+	}
 </script>
 
 <svelte:head><title>Audit · ShipTrack Pro</title></svelte:head>
 
-<div class="mb-6 flex flex-wrap items-center gap-4">
-	<h1 class="h4">Audit log</h1>
-	<form method="GET" class="flex gap-2">
-		<input class="input" type="search" name="q" placeholder="Search action or actor" value={data.search} />
-		<button class="btn preset-outlined-surface-200-800" type="submit">Search</button>
-	</form>
-</div>
+<PageHead
+	code="C05"
+	title="Audit log"
+	lede="Console actions, activations and refusals, seat changes and releases, as the licence server recorded them. Newest first."
+>
+	<SearchBar value={data.search} placeholder="Action or actor" label="Search the audit log" />
+</PageHead>
 
-<div class="table-wrap">
-	<table class="table">
+<div class="st-table-wrap">
+	<table class="st-table st-table--cards">
 		<thead>
-			<tr><th>When</th><th>Action</th><th>Actor</th><th>Details</th></tr>
+			<tr>
+				<th scope="col">When</th>
+				<th scope="col">Action</th>
+				<th scope="col">Actor</th>
+				<th scope="col">Details</th>
+			</tr>
 		</thead>
 		<tbody>
 			{#each data.entries as entry (entry.id)}
+				{@const at = when(entry.createdAt)}
 				<tr>
-					<td class="text-sm whitespace-nowrap">
-						{new Date(entry.createdAt).toLocaleString()}
+					<td data-label="When">
+						<span class="when st-num">
+							<span>{at.date}</span>
+							<span class="st-faint">{at.time}</span>
+						</span>
 					</td>
-					<td><span class="badge {tone(entry.action)}">{entry.action}</span></td>
-					<td class="text-sm">{entry.actor}</td>
-					<td class="text-xs opacity-70">
+					<td data-label="Action">
+						<StateChip tone={tone(entry.action)} label={entry.action} raw />
+					</td>
+					<td data-label="Actor"><span class="actor">{entry.actor}</span></td>
+					<td data-label="Details">
 						{#if entry.details && Object.keys(entry.details).length > 0}
-							<code class="break-all">{JSON.stringify(entry.details)}</code>
+							<code class="st-code details">{JSON.stringify(entry.details)}</code>
+						{:else}
+							<span class="st-faint">None</span>
 						{/if}
 					</td>
 				</tr>
 			{:else}
-				<tr><td colspan="4" class="py-8 text-center opacity-60">Nothing recorded yet.</td></tr>
+				<tr>
+					<td colspan="4" class="none">
+						{data.search ? `Nothing matches “${data.search}”.` : 'Nothing recorded yet.'}
+					</td>
+				</tr>
 			{/each}
 		</tbody>
 	</table>
 </div>
 
-<div class="mt-4 flex items-center gap-2">
+<nav class="pager" aria-label="Audit pages">
 	{#if data.page > 1}
-		<a
-			class="btn btn-sm preset-outlined-surface-200-800"
-			href={resolve(`/admin/audit?${query(data.page - 1)}`)}>Previous</a
-		>
+		<a class="st-btn st-btn--ghost st-btn--sm" href={resolve(`/admin/audit?${query(data.page - 1)}`)}>
+			<span class="flip"><Icon name="arrow" size={14} /></span> Newer
+		</a>
 	{/if}
-	<span class="text-sm opacity-60">Page {data.page}</span>
+	<span class="st-label">Page {data.page}</span>
 	{#if data.hasNext}
-		<a
-			class="btn btn-sm preset-outlined-surface-200-800"
-			href={resolve(`/admin/audit?${query(data.page + 1)}`)}>Next</a
-		>
+		<a class="st-btn st-btn--ghost st-btn--sm" href={resolve(`/admin/audit?${query(data.page + 1)}`)}>
+			Older <Icon name="arrow" size={14} />
+		</a>
 	{/if}
-</div>
+</nav>
+
+<style>
+	.when {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		font-size: 13px;
+		white-space: nowrap;
+	}
+	.actor {
+		overflow-wrap: anywhere;
+	}
+	.details {
+		display: block;
+		max-width: 38rem;
+		color: var(--ink-soft);
+		font-size: 12px;
+		overflow-wrap: anywhere;
+	}
+	.none {
+		padding: 3rem 1rem;
+		color: var(--ink-soft);
+		text-align: center;
+	}
+	.pager {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+	.flip {
+		display: inline-grid;
+		transform: scaleX(-1);
+	}
+
+	@media (max-width: 760px) {
+		.when {
+			flex-direction: row;
+			gap: 0.5rem;
+		}
+		.none {
+			text-align: left;
+		}
+	}
+</style>
