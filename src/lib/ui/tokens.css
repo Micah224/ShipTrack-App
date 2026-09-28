@@ -1,0 +1,547 @@
+/*
+ * ShipTrack design language, September 2026.
+ *
+ * Structure and type follow the reference the redesign was briefed from: a
+ * ruled sheet, zero radius, mono labels, a wide display face, a near-black
+ * console. Identity stays ShipTrack's: deep navy ink and bands, amber for
+ * warnings and hazard hatching, isometric containers instead of anyone else's
+ * illustration. See scrollcraft/builds/greptile-redesign/BRIEF.md.
+ *
+ * Every colour pair used for text or data marks here was measured, not picked
+ * by eye (dataviz validate_palette.js, WCAG contrast):
+ *   site ink on canvas 12.0:1 · ink-soft 5.9:1 · ink-faint 4.8:1
+ *   mint-ink on mint 10.0:1 · mint on the light canvas 1.3:1, so on the site
+ *   mint is ONLY ever a fill carrying dark text, never text or a hairline
+ *   console status scale good/warn/crit: CVD dE 9.0, normal-vision dE 19.7
+ *   console de-emphasis marks 3.4:1 · ink-faint 4.9:1
+ *
+ * Prefixed `st-` throughout: the customer portal still renders with Skeleton,
+ * whose `btn`, `chip`, `card` and `table` classes these would otherwise fight.
+ */
+
+:root {
+	--st-font-display: 'Anybody Variable', 'Arial Narrow', system-ui, sans-serif;
+	--st-font-text: 'DM Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--st-font-mono: 'Space Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+	--mint: #28e99f;
+	--mint-ink: #06281c;
+	--mint-pale: #c5ffd6;
+	--lime-pale: #ecffa3;
+	--sky-pale: #d6e8ff;
+	--rose-pale: #ffd6de;
+	--amber: #f59e0b;
+	--navy: #0b3b5c;
+	--navy-deep: #072a42;
+
+	--site-canvas: #e8e8e6;
+	--site-sheet: #f3f3f1;
+	--site-ink: #0e2a3f;
+	--site-ink-soft: #4a5968;
+	--site-ink-faint: #5a6571;
+	--site-rule: rgb(14 42 63 / 0.22);
+	--site-rule-soft: rgb(14 42 63 / 0.12);
+	--site-hatch: rgb(14 42 63 / 0.09);
+
+	--con-canvas: #171717;
+	--con-panel: #1d1d1d;
+	--con-panel-2: #242424;
+	--con-line: #333333;
+	--con-line-soft: #2a2a2a;
+	--con-ink: #f2f2f2;
+	--con-ink-soft: #a3a3a3;
+	--con-ink-faint: #8a8a8a;
+	--con-dim: #707070;
+	--con-good: #28e99f;
+	--con-warn: #f5c451;
+	--con-crit: #ff6b7a;
+
+	--st-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------------------------------------------------------------- surfaces */
+
+.st-site {
+	--bg: var(--site-canvas);
+	--sheet: var(--site-sheet);
+	--ink: var(--site-ink);
+	--ink-soft: var(--site-ink-soft);
+	--ink-faint: var(--site-ink-faint);
+	--rule: var(--site-rule);
+	--rule-soft: var(--site-rule-soft);
+	--hatch: var(--site-hatch);
+	/* Mint fails as a ring on the light sheet (1.3:1), so focus is ink. */
+	--focus: var(--site-ink);
+	background: var(--bg);
+	color: var(--ink);
+	font-family: var(--st-font-text);
+	font-size: 16px;
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
+}
+
+.st-console {
+	--bg: var(--con-canvas);
+	--sheet: var(--con-panel);
+	--sheet-2: var(--con-panel-2);
+	--ink: var(--con-ink);
+	--ink-soft: var(--con-ink-soft);
+	--ink-faint: var(--con-ink-faint);
+	--rule: var(--con-line);
+	--rule-soft: var(--con-line-soft);
+	--focus: var(--mint);
+	background: var(--bg);
+	color: var(--ink);
+	color-scheme: dark;
+	font-family: var(--st-font-text);
+	font-size: 15px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* The page behind a surface shows on overscroll; keep it the same ground. */
+html:has(.st-site) {
+	background: var(--site-canvas);
+}
+html:has(.st-console) {
+	background: var(--con-canvas);
+	color-scheme: dark;
+}
+
+:is(.st-site, .st-console) :focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 3px;
+}
+
+:is(.st-site, .st-console) ::selection {
+	background: var(--mint);
+	color: var(--mint-ink);
+}
+
+/* ------------------------------------------------------------------- type */
+
+.st-display {
+	font-family: var(--st-font-display);
+	font-stretch: 125%;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	line-height: 0.95;
+	text-wrap: balance;
+}
+
+.st-label {
+	font-family: var(--st-font-mono);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.3;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--ink-soft);
+}
+
+.st-code {
+	font-family: var(--st-font-mono);
+	font-size: 0.92em;
+	letter-spacing: 0.02em;
+}
+
+.st-num {
+	font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Skeleton styles every bare <code> as a tinted, nowrap pill for the portal.
+ * On these surfaces code is just the mono face, and it must wrap: a SHA-256 or
+ * an audit payload in a nowrap pill pushes the whole page sideways. :where()
+ * keeps this at element specificity so .st-code still sets the size.
+ */
+:where(.st-site, .st-console) code {
+	padding: 0;
+	border-radius: 0;
+	background: none;
+	color: inherit;
+	font-family: var(--st-font-mono);
+	font-size: inherit;
+	white-space: inherit;
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.st-btn {
+	position: relative;
+	isolation: isolate;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	min-height: 40px;
+	padding: 0 1.1rem;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--ink);
+	font: 500 14px/1 var(--st-font-text);
+	white-space: nowrap;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		background-color 160ms var(--st-ease-out),
+		border-color 160ms var(--st-ease-out),
+		color 160ms var(--st-ease-out),
+		transform 160ms var(--st-ease-out);
+}
+.st-btn:active {
+	transform: translateY(1px);
+}
+.st-btn:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+.st-btn--sm {
+	min-height: 32px;
+	padding: 0 0.75rem;
+	font-size: 13px;
+}
+
+/*
+ * The tag shape: pointed at both ends. The clip lives on a pseudo-element so
+ * the button itself stays rectangular and its focus outline is not clipped
+ * away with the corners.
+ */
+.st-btn--tag {
+	padding: 0 1.5rem;
+	background: transparent;
+}
+.st-btn--tag::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	background: var(--tag-bg, var(--ink));
+	clip-path: polygon(
+		12px 0,
+		calc(100% - 12px) 0,
+		100% 50%,
+		calc(100% - 12px) 100%,
+		12px 100%,
+		0 50%
+	);
+	transition: background-color 160ms var(--st-ease-out);
+}
+.st-btn--mint {
+	--tag-bg: var(--mint);
+	color: var(--mint-ink);
+}
+.st-btn--mint:hover {
+	--tag-bg: #52f0b2;
+}
+.st-btn--ink {
+	--tag-bg: var(--ink);
+	color: var(--bg);
+}
+.st-btn--ink:hover {
+	--tag-bg: var(--navy);
+}
+
+/* Console buttons are rectangles, as in the reference console. */
+.st-btn--solid {
+	background: var(--ink);
+	color: var(--bg);
+}
+.st-btn--solid:hover {
+	background: #ffffff;
+}
+.st-btn--accent {
+	background: var(--mint);
+	color: var(--mint-ink);
+}
+.st-btn--accent:hover {
+	background: #52f0b2;
+}
+.st-btn--ghost {
+	border-color: var(--rule);
+	color: var(--ink);
+}
+.st-btn--ghost:hover {
+	border-color: var(--ink-faint);
+	background: var(--sheet-2, var(--sheet));
+}
+.st-btn--danger {
+	border-color: color-mix(in oklab, var(--con-crit) 55%, transparent);
+	color: var(--con-crit);
+}
+.st-btn--danger:hover {
+	background: var(--con-crit);
+	border-color: var(--con-crit);
+	color: #2a0a0f;
+}
+.st-btn--warn {
+	border-color: color-mix(in oklab, var(--con-warn) 50%, transparent);
+	color: var(--con-warn);
+}
+.st-btn--warn:hover {
+	background: var(--con-warn);
+	border-color: var(--con-warn);
+	color: #2b2005;
+}
+.st-btn--good {
+	border-color: color-mix(in oklab, var(--con-good) 50%, transparent);
+	color: var(--con-good);
+}
+.st-btn--good:hover {
+	background: var(--con-good);
+	border-color: var(--con-good);
+	color: var(--mint-ink);
+}
+
+/* ------------------------------------------------------------ chips, state */
+
+/*
+ * Status is never colour alone: every chip carries a glyph and its word. The
+ * glyph differs per state (dot, triangle, cross) so the three read apart in
+ * greyscale and under every colour-vision deficiency.
+ */
+.st-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 3px 8px;
+	border: 1px solid var(--chip-line, var(--rule));
+	color: var(--chip-ink, var(--ink-soft));
+	background: var(--chip-bg, transparent);
+	font: 400 11px/1.2 var(--st-font-mono);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+.st-chip[data-raw] {
+	letter-spacing: 0.02em;
+	text-transform: none;
+}
+.st-chip[data-tone='good'] {
+	--chip-ink: var(--con-good);
+	--chip-line: color-mix(in oklab, var(--con-good) 40%, transparent);
+	--chip-bg: color-mix(in oklab, var(--con-good) 8%, transparent);
+}
+.st-chip[data-tone='warn'] {
+	--chip-ink: var(--con-warn);
+	--chip-line: color-mix(in oklab, var(--con-warn) 40%, transparent);
+	--chip-bg: color-mix(in oklab, var(--con-warn) 8%, transparent);
+}
+.st-chip[data-tone='crit'] {
+	--chip-ink: var(--con-crit);
+	--chip-line: color-mix(in oklab, var(--con-crit) 45%, transparent);
+	--chip-bg: color-mix(in oklab, var(--con-crit) 8%, transparent);
+}
+.st-chip[data-tone='accent'] {
+	--chip-ink: var(--mint-ink);
+	--chip-line: var(--mint);
+	--chip-bg: var(--mint);
+}
+
+/* ----------------------------------------------------------------- panels */
+
+.st-panel {
+	background: var(--sheet);
+	border: 1px solid var(--rule);
+}
+.st-panel__head {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-height: 56px;
+	padding: 0 1.25rem;
+	border-bottom: 1px solid var(--rule);
+}
+.st-panel__title {
+	font-family: var(--st-font-mono);
+	font-size: 12px;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--ink-soft);
+}
+.st-panel__body {
+	padding: 1.25rem;
+}
+
+/* ----------------------------------------------------------------- fields */
+
+.st-field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+.st-input {
+	width: 100%;
+	min-height: 40px;
+	padding: 0 0.75rem;
+	border: 1px solid var(--rule);
+	border-radius: 0;
+	background: var(--sheet-2, var(--sheet));
+	color: var(--ink);
+	font: 400 14px/1.2 var(--st-font-text);
+	transition: border-color 140ms var(--st-ease-out);
+}
+.st-input::placeholder {
+	color: var(--ink-faint);
+}
+.st-input:hover {
+	border-color: var(--ink-faint);
+}
+.st-input:focus {
+	border-color: var(--focus);
+	outline: none;
+}
+.st-input:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+select.st-input {
+	padding-right: 2rem;
+	appearance: none;
+	background-image:
+		linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%),
+		linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%);
+	background-position:
+		calc(100% - 16px) 52%,
+		calc(100% - 11px) 52%;
+	background-size: 5px 5px;
+	background-repeat: no-repeat;
+}
+
+/* ----------------------------------------------------------------- tables */
+
+.st-table-wrap {
+	overflow-x: auto;
+	border: 1px solid var(--rule);
+	background: var(--sheet);
+}
+.st-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+}
+.st-table th {
+	padding: 0.75rem 1rem;
+	border-bottom: 1px solid var(--rule);
+	color: var(--ink-faint);
+	font: 400 11px/1.2 var(--st-font-mono);
+	letter-spacing: 0.1em;
+	text-align: left;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+.st-table td {
+	padding: 0.85rem 1rem;
+	border-bottom: 1px solid var(--rule-soft);
+	vertical-align: top;
+}
+.st-table tbody tr:last-child td {
+	border-bottom: 0;
+}
+.st-table tbody tr:hover td {
+	background: color-mix(in oklab, var(--ink) 3%, transparent);
+}
+.st-table .st-end {
+	text-align: right;
+}
+
+/*
+ * On a phone a wide table becomes a stack of cards: each row a block, each
+ * cell a line with its column name printed beside it from `data-label`. The
+ * header row is hidden visually but kept for assistive technology.
+ */
+@media (max-width: 760px) {
+	.st-table--cards thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+	.st-table--cards,
+	.st-table--cards tbody,
+	.st-table--cards tr,
+	.st-table--cards td {
+		display: block;
+	}
+	.st-table--cards tbody tr {
+		padding: 0.5rem 0;
+		border-bottom: 1px solid var(--rule);
+	}
+	.st-table--cards tbody tr:last-child {
+		border-bottom: 0;
+	}
+	.st-table--cards td {
+		display: grid;
+		grid-template-columns: 6.5rem minmax(0, 1fr);
+		gap: 0.75rem;
+		padding: 0.45rem 1rem;
+		border-bottom: 0;
+		text-align: left;
+	}
+	.st-table--cards td[data-label]::before {
+		content: attr(data-label);
+		padding-top: 0.2rem;
+		color: var(--ink-faint);
+		font: 400 10px/1.3 var(--st-font-mono);
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+	}
+	/* Chips and buttons keep their own width instead of stretching to the cell. */
+	.st-table--cards td > * {
+		justify-self: start;
+	}
+	.st-table--cards td:not([data-label]) {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.st-table--cards .st-end {
+		text-align: left;
+	}
+	.st-table--cards tbody tr:hover td {
+		background: transparent;
+	}
+}
+
+/* Text for assistive technology only: read aloud, never drawn. */
+.st-vh {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.st-muted {
+	color: var(--ink-soft);
+}
+.st-faint {
+	color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------- ruled-sheet motifs */
+
+/* Diagonal hatching, the band between modules on the reference sheet. */
+.st-hatch {
+	background-image: repeating-linear-gradient(
+		135deg,
+		var(--hatch, var(--rule-soft)) 0 1px,
+		transparent 1px 7px
+	);
+}
+
+/* Amber hazard hatch: ShipTrack's own version of the band, for the dock edge. */
+.st-hazard {
+	background-image: repeating-linear-gradient(135deg, var(--amber) 0 10px, var(--ink) 10px 20px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:is(.st-site, .st-console) *,
+	:is(.st-site, .st-console) *::before,
+	:is(.st-site, .st-console) *::after {
+		animation-duration: 1ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 1ms !important;
+		scroll-behavior: auto !important;
+	}
+}

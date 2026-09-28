@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { DEFAULT_SEATS, TIER_FEATURES, TIER_LIMITS, type Tier } from '$lib/server/domain/tiers';
+import { optional } from '$lib/server/env';
 
 /*
  * The pricing table is computed from the same matrix the licence API grants
@@ -39,6 +40,16 @@ const COPY: Record<Tier, { name: string; price: string; cadence: string; pitch: 
 	}
 };
 
+/*
+ * Where customers write for help. Configuration, not copy: an address typed
+ * into the page would be one nobody reads. Anything that is not plainly an
+ * address is treated as unset, so a typo cannot publish a broken mailto link.
+ */
+function supportEmail(): string | null {
+	const value = optional('SUPPORT_EMAIL').trim();
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;
+}
+
 export const load: PageServerLoad = () => ({
 	tiers: TIERS.map((tier) => ({
 		tier,
@@ -46,5 +57,6 @@ export const load: PageServerLoad = () => ({
 		seats: DEFAULT_SEATS[tier],
 		features: TIER_FEATURES[tier],
 		limits: TIER_LIMITS[tier]
-	}))
+	})),
+	supportEmail: supportEmail()
 });

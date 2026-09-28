@@ -5,6 +5,14 @@
 @import '@skeletonlabs/skeleton';
 @import './shiptrack-theme.css';
 
+/* Self-hosted, OFL-licensed: no third-party font request on any page. Anybody
+   is loaded with its width axis, which is what makes the display face wide. */
+@import '@fontsource-variable/anybody/wdth.css';
+@import '@fontsource-variable/dm-sans/index.css';
+@import '@fontsource/space-mono/400.css';
+@import '@fontsource/space-mono/700.css';
+@import './lib/ui/tokens.css';
+
 /* Tailwind scans source files, not node_modules, so the component library's
    own class names have to be pointed at explicitly or they get purged. */
 @source '../node_modules/@skeletonlabs/skeleton-svelte/dist';
