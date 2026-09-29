@@ -5,6 +5,8 @@ import { getDb } from '$lib/server/db';
 import type { License } from '$lib/server/db/schema';
 import { findLicenseByKey } from '$lib/server/domain/licenses';
 import { meterLicense } from '$lib/server/domain/limits';
+import { findActivation } from '$lib/server/domain/seats';
+import type { Activation } from '$lib/server/db/schema';
 import { POST } from './+server';
 
 /*
@@ -82,6 +84,74 @@ describe('POST /api/v1/heartbeat', () => {
 		expect(update).toHaveBeenCalledOnce();
 		expect(body.latest_version).toBe('5.2.0');
 		expect(verifyLicenseToken(body.token, publicPem)).toMatchObject({ domain: 'owlex.example.com' });
+	});
+
+	/*
+	 * The plugin locks itself on `not_activated`, so it must be distinct from
+	 * `invalid_request` — which a malformed request produces, and which must
+	 * never lock a site.
+	 */
+	it('answers 409 not_activated, and records nothing, for an install whose seat was released', async () => {
+		vi.mocked(findActivation).mockResolvedValueOnce({
+			id: 'a1',
+			domain: 'owlex.example.com',
+			releasedAt: new Date('2026-09-28T10:00:00Z'),
+			releaseReason: 'SELF_SERVICE'
+		} as Activation);
+
+		const response = await heartbeat();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({
+			ok: false,
+			code: 'not_activated',
+			message: "This install's seat was released. Activate the licence on this site again to use it.",
+			released_at: '2026-09-28T10:00:00.000Z',
+			release_reason: 'self_service'
+		});
+		expect(update).not.toHaveBeenCalled();
+	});
+
+	it('names a reclaimed seat as auto_reclaim', async () => {
+		vi.mocked(findActivation).mockResolvedValueOnce({
+			id: 'a1',
+			domain: 'owlex.example.com',
+			releasedAt: new Date('2026-09-28T10:00:00Z'),
+			releaseReason: 'AUTO_RECLAIM'
+		} as Activation);
+
+		const body = await (await heartbeat()).json();
+
+		expect(body).toMatchObject({ code: 'not_activated', release_reason: 'auto_reclaim' });
+	});
+
+	it('answers 409 not_activated for an install that never activated', async () => {
+		vi.mocked(findActivation).mockResolvedValueOnce(undefined);
+
+		const response = await heartbeat();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			ok: false,
+			code: 'not_activated',
+			released_at: null,
+			release_reason: null
+		});
+		expect(update).not.toHaveBeenCalled();
+	});
+
+	it('keeps invalid_request for a malformed request', async () => {
+		const request = new Request('https://licence.test/api/v1/heartbeat', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ key: 'STP-TEST-TEST-TEST', site_url: 'https://owlex.example.com' })
+		});
+
+		const response = await POST({ request } as Parameters<typeof POST>[0]);
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({ code: 'invalid_request' });
+		expect(findActivation).not.toHaveBeenCalled();
 	});
 
 	it('records nothing, and answers a coded 503, when it cannot sign', async () => {

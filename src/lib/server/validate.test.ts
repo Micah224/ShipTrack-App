@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidField, optionalStr, optionalStrArray, str } from './validate.ts';
+import { InvalidField, optionalStr, optionalStrArray, str, versionStr } from './validate.ts';
 
 describe('str', () => {
 	it('accepts a normal string', () => {
@@ -98,5 +98,35 @@ describe('optionalStrArray bounds the blob, not just the count', () => {
 		// The 33rd entry is sliced away, so its length is irrelevant.
 		const body = { modes: [...Array.from({ length: 32 }, () => 'road'), 'z'.repeat(500)] };
 		expect(optionalStrArray(body, 'modes')).toHaveLength(32);
+	});
+});
+
+describe('versionStr', () => {
+	it.each(['5.2.0', '0.0.1', '5.10.0', '5.1.0-beta.1', '5.1.0-rc-2', '5.1.0+build.7', '5.1.0-beta.1+sha.abc'])(
+		'accepts %s',
+		(version) => {
+			expect(versionStr({ version }, 'version')).toBe(version);
+		}
+	);
+
+	it.each([
+		['a leading v, which is the tag and not the stored version', 'v5.2.0'],
+		['two segments', '5.2'],
+		['four segments', '5.2.0.1'],
+		['leading zeros', '05.2.0'],
+		['surrounding whitespace', ' 5.2.0'],
+		['a path', '../5.2.0'],
+		['SQL', "5.2.0' OR '1'='1"],
+		['an empty prerelease', '5.2.0-'],
+		['an absurd number', '5.1234567.0']
+	])('rejects %s', (_label, version) => {
+		expect(() => versionStr({ version }, 'version')).toThrow(InvalidField);
+	});
+
+	it('rejects a non-string and an over-long string before testing the shape', () => {
+		expect(() => versionStr({ version: 5.2 }, 'version')).toThrow('version must be a non-empty string.');
+		expect(() => versionStr({ version: `5.2.0-${'a'.repeat(40)}` }, 'version')).toThrow(
+			'version must be at most 32 characters.'
+		);
 	});
 });

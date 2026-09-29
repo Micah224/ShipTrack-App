@@ -27,6 +27,8 @@ the plugin branches on that, never on the prose.
 | POST | `/api/v1/deactivate` | Release a seat |
 | POST | `/api/v1/updates/check` | WordPress update transient payload |
 | POST | `/api/v1/updates/info` | `plugins_api` version-details modal |
+| POST | `/api/v1/updates/versions` | Up to ten downloadable versions, newest first, for the plugin's rollback list |
+| POST | `/api/v1/updates/package` | A single-use download link for one named version (rollback) |
 | GET | `/api/v1/updates/download/[token]` | Consume a single-use token, 302 to a presigned R2 URL |
 | POST | `/api/webhooks/github` | Ingest a published release into R2 and the database |
 

@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
 import { meterLicense, meterMiss } from '$lib/server/domain/limits';
-import { latestRelease, releaseById } from '$lib/server/domain/releases';
+import { latestRelease, NO_CHANGELOG_HTML, releaseById } from '$lib/server/domain/releases';
 import { optional, required } from '$lib/server/env';
 import { fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
 import { InvalidField, str } from '$lib/server/validate';
@@ -76,7 +76,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				'PLUGIN_DESCRIPTION',
 				'API-first shipment tracking and visibility for WordPress.'
 			),
-			changelog: release.changelogHtml || '<p>No changelog was published for this release.</p>'
+			changelog: release.changelogHtml || NO_CHANGELOG_HTML
 		},
 		banners: {
 			low: `${base}/assets/banner-772x250.png`,

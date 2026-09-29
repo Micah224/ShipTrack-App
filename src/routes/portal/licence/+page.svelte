@@ -121,7 +121,8 @@
 	{#if form?.released}
 		<p class="notice notice--good" role="status">
 			<Icon name="check" size={16} />
-			Freed the seat used by {form.released}. It is available immediately.
+			Freed the seat used by {form.released}. It is available immediately, and that site stops
+			using the licence at its next check-in until it is activated again.
 		</p>
 	{:else if form?.message}
 		<p class="notice notice--crit" role="alert">
