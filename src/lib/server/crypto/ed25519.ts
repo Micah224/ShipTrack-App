@@ -39,7 +39,42 @@ const ALG = 'Ed25519';
 const TYP = 'STP-LIC';
 
 function privateKey(): crypto.KeyObject {
-	return crypto.createPrivateKey({ key: required('ED25519_PRIVATE_KEY'), format: 'pem' });
+	const key = normalisePem(required('ED25519_PRIVATE_KEY'));
+	return crypto.createPrivateKey({ key, format: 'pem' });
+}
+
+/**
+ * The PEM as it was stored, rebuilt into the form OpenSSL accepts.
+ *
+ * `keys:generate` prints the key for `.env`: double-quoted, newlines escaped as
+ * `\n`. Pasted verbatim into Vercel, which stores values as typed, the quotes
+ * and backslashes reach `createPrivateKey`, and so does a PEM whose line breaks
+ * became spaces on the way through a browser field. OpenSSL reports every one
+ * of these as the same `DECODER routines::unsupported`, naming nothing, and
+ * every activation fails. Base64 contains no quote, backslash or whitespace, so
+ * stripping them from the body cannot change a correctly stored key.
+ */
+export function normalisePem(raw: string): string {
+	let value = raw.trim();
+	if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
+		value = value.slice(1, -1);
+	}
+	value = value.replace(/\\r/g, '').replace(/\\n/g, '\n').trim();
+
+	/*
+	 * Exactly one PKCS#8 block and nothing else. Picking the first of two keys
+	 * pasted together during a rotation would sign with one key while
+	 * ED25519_KEY_ID names the other, and every site would refuse the token.
+	 */
+	const armour = /^-----BEGIN PRIVATE KEY-----([A-Za-z0-9+/=\s]+)-----END PRIVATE KEY-----$/.exec(value);
+	if (!armour) {
+		// Never echo the value: this message reaches logs.
+		throw new Error(
+			'ED25519_PRIVATE_KEY must hold exactly one PEM block, from BEGIN PRIVATE KEY to END PRIVATE KEY.'
+		);
+	}
+	const body = armour[1].replace(/\s+/g, '').match(/.{1,64}/g) ?? [];
+	return `-----BEGIN PRIVATE KEY-----\n${body.join('\n')}\n-----END PRIVATE KEY-----\n`;
 }
 
 /**
