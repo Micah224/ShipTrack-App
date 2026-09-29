@@ -39,7 +39,35 @@ const ALG = 'Ed25519';
 const TYP = 'STP-LIC';
 
 function privateKey(): crypto.KeyObject {
-	return crypto.createPrivateKey({ key: required('ED25519_PRIVATE_KEY'), format: 'pem' });
+	const key = normalisePem(required('ED25519_PRIVATE_KEY'));
+	return crypto.createPrivateKey({ key, format: 'pem' });
+}
+
+/**
+ * The PEM as it was stored, rebuilt into the form OpenSSL accepts.
+ *
+ * `keys:generate` prints the key for `.env`: double-quoted, newlines escaped as
+ * `\n`. Pasted verbatim into Vercel, which stores values as typed, the quotes
+ * and backslashes reach `createPrivateKey`, and so does a PEM whose line breaks
+ * became spaces on the way through a browser field. OpenSSL reports every one
+ * of these as the same `DECODER routines::unsupported`, naming nothing, and
+ * every activation fails. Base64 contains no quote, backslash or whitespace, so
+ * stripping them from the body cannot change a correctly stored key.
+ */
+export function normalisePem(raw: string): string {
+	let value = raw.trim();
+	if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
+		value = value.slice(1, -1);
+	}
+	value = value.replace(/\\r/g, '').replace(/\\n/g, '\n');
+
+	const armour = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/.exec(value);
+	if (!armour) {
+		// Never echo the value: this message reaches logs.
+		throw new Error('ED25519_PRIVATE_KEY is not a PEM key: no BEGIN/END lines were found.');
+	}
+	const body = armour[2].replace(/\s+/g, '').match(/.{1,64}/g) ?? [];
+	return `-----BEGIN ${armour[1]}-----\n${body.join('\n')}\n-----END ${armour[1]}-----\n`;
 }
 
 /**

@@ -1,12 +1,20 @@
 import crypto from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { rawPublicKeyBase64, signLicenseToken, verifyLicenseToken, type LicenseTokenPayload } from './ed25519.ts';
+import {
+	normalisePem,
+	rawPublicKeyBase64,
+	signLicenseToken,
+	verifyLicenseToken,
+	type LicenseTokenPayload
+} from './ed25519.ts';
 
 let publicPem: string;
+let privatePem: string;
 
 beforeAll(() => {
 	const pair = crypto.generateKeyPairSync('ed25519');
-	process.env.ED25519_PRIVATE_KEY = pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+	privatePem = pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+	process.env.ED25519_PRIVATE_KEY = privatePem;
 	process.env.ED25519_KEY_ID = 'stp-test';
 	publicPem = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 });
@@ -100,5 +108,47 @@ describe('rawPublicKeyBase64', () => {
 		expect(Buffer.from(rawPublicKeyBase64(publicPem), 'base64')).toEqual(
 			Buffer.from(der.subarray(der.length - 32))
 		);
+	});
+});
+
+describe('normalisePem', () => {
+	/*
+	 * The shapes a PEM takes on its way into a dashboard field. Each one fails in
+	 * createPrivateKey with the same "DECODER routines::unsupported", which is
+	 * how production activation broke with nothing in the log naming the cause.
+	 */
+	const mangled: [string, (pem: string) => string][] = [
+		['the .env line pasted verbatim', (pem) => `"${pem.trimEnd().replace(/\n/g, '\\n')}"`],
+		['escaped newlines without the quotes', (pem) => pem.trimEnd().replace(/\n/g, '\\n')],
+		['single-quoted', (pem) => `'${pem}'`],
+		['line breaks turned into spaces', (pem) => pem.replace(/\n/g, ' ')],
+		['line breaks removed', (pem) => pem.replace(/\n/g, '')],
+		['Windows line endings', (pem) => pem.replace(/\n/g, '\r\n')],
+		['surrounding whitespace', (pem) => `\n  ${pem}\n\n`]
+	];
+
+	it.each(mangled)('recovers %s', (_name, mangle) => {
+		expect(normalisePem(mangle(privatePem))).toBe(privatePem);
+	});
+
+	it.each(mangled)('signs a verifiable token from %s', (_name, mangle) => {
+		const original = process.env.ED25519_PRIVATE_KEY;
+		process.env.ED25519_PRIVATE_KEY = mangle(privatePem);
+		try {
+			const signed = signLicenseToken(payload());
+			expect(verifyLicenseToken(signed.token, publicPem)).toMatchObject({ tier: 'PROFESSIONAL' });
+		} finally {
+			process.env.ED25519_PRIVATE_KEY = original;
+		}
+	});
+
+	it('leaves a correctly stored key exactly as it was', () => {
+		expect(normalisePem(privatePem)).toBe(privatePem);
+	});
+
+	it('refuses a value with no PEM armour, without echoing it', () => {
+		const secret = 'MC4CAQAwBQYDK2VwBCIEIKnotarealkeyatallbutshaped==';
+		expect(() => normalisePem(secret)).toThrow(/no BEGIN\/END lines/);
+		expect(() => normalisePem(secret)).not.toThrow(new RegExp(secret.slice(0, 12)));
 	});
 });
