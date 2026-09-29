@@ -51,6 +51,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error;
 	}
 
+	// Before anything is read or written: a check-in that cannot be answered records nothing.
+	const signing = signingStatus();
+	if (!signing.ready) return signingUnavailable(signing.problem);
+
 	const license = await findLicenseByKey(key);
 	if (!license) {
 		/*
@@ -94,10 +98,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	const state = licenseState(license);
 	const denied = stateRefusal(state);
 
-	// Nothing is recorded for a check-in that cannot be answered.
-	const signing = signingStatus();
-	if (!signing.ready) return signingUnavailable(signing.problem);
-
 	const db = getDb();
 	await db
 		.update(activations)
@@ -138,6 +138,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	}, 200, rateLimitHeaders(rate));
 };
 
+let lastLogged = 0;
+
 /**
  * Liveness for uptime checks, and the place to confirm the server can sign.
  *
@@ -156,7 +158,11 @@ export const GET: RequestHandler = async () => {
 	const headers = { 'Cache-Control': 'no-store' };
 	const signing = signingStatus();
 	if (!signing.ready) {
-		console.error(`[licence] not ready: ${signing.problem}`);
+		// The site footer polls this on every page view: one line a minute per instance is enough.
+		if (Date.now() - lastLogged >= 60_000) {
+			lastLogged = Date.now();
+			console.error(`[licence] not ready: ${signing.problem}`);
+		}
 		return json(
 			{ ok: false, service: 'shiptrack-licence', ready: false, problems: ['signing'] },
 			{ status: 503, headers }

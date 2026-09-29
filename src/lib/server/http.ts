@@ -99,11 +99,11 @@ export function limited(outcome: LimitOutcome, message: string) {
 
 /**
  * The 503 for a server that cannot sign entitlements right now (see
- * `signingStatus`). Returned before anything is written, and never a crash:
- * an uncaught throw reaches the plugin as SvelteKit's bare "Internal Error",
- * with no code, which reads to a customer like their site is at fault. The
- * plugin shows this message instead, and on a heartbeat keeps its stored token
- * through the grace period as it does for any failed check-in.
+ * `signingStatus`). Returned before anything is read or written, and never a
+ * crash: an uncaught throw reaches the plugin as SvelteKit's bare "Internal
+ * Error", with no code, which reads to a customer like their site is at fault.
+ * The plugin shows this message instead, and on a heartbeat keeps its stored
+ * token through the grace period as it does for any failed check-in.
  *
  * The reason goes to the log only. It names the misconfiguration, which is
  * ours to fix and no business of the caller.

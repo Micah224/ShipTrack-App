@@ -40,6 +40,17 @@ const TYP = 'STP-LIC';
 
 const VARIABLE = 'ED25519_PRIVATE_KEY';
 
+/** Block labels a refusal may name. Any other label came from the stored value, and is not echoed. */
+const KNOWN_LABELS = new Set([
+	'OPENSSH PRIVATE KEY',
+	'EC PRIVATE KEY',
+	'RSA PRIVATE KEY',
+	'DSA PRIVATE KEY',
+	'ENCRYPTED PRIVATE KEY',
+	'RSA PUBLIC KEY',
+	'CERTIFICATE'
+]);
+
 /**
  * Why the stored signing key cannot be used.
  *
@@ -119,6 +130,10 @@ export function normalisePem(raw: string): string {
 		const assignment = /^(?:export\s+)?([A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]*)\s*=(.*)$/.exec(trimmed);
 		if (!assignment) kept.push(trimmed);
 		else if (assignment[1] === VARIABLE) kept.push(assignment[2].trim());
+		else if (assignment[2].includes('PRIVATE KEY')) {
+			// Dropping it would hide a second key, the case refused below for one name.
+			throw new SigningKeyError('it holds a second private key under another variable name. Store one key alone');
+		}
 	}
 	let value = kept.join('\n').replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '').trim();
 	value = value.replace(/\\+r/g, '').replace(/\\+n/g, '\n').replace(/\r/g, '').trim();
@@ -133,7 +148,8 @@ export function normalisePem(raw: string): string {
 
 	const foreign = begins.find((label) => label !== 'PRIVATE KEY' && label !== 'PUBLIC KEY');
 	if (foreign) {
-		throw new SigningKeyError(`it holds a "${foreign}" block, not the PKCS#8 "PRIVATE KEY" block the server signs with`);
+		const kind = KNOWN_LABELS.has(foreign) ? `a "${foreign}" block` : 'a PEM block of an unrecognised kind';
+		throw new SigningKeyError(`it holds ${kind}, not the PKCS#8 "PRIVATE KEY" block the server signs with`);
 	}
 	const privates = begins.filter((label) => label === 'PRIVATE KEY').length;
 	if (privates === 0 && begins.length > 0) {
@@ -169,6 +185,7 @@ export function normalisePem(raw: string): string {
 				: 'the lines between BEGIN and END contain characters that are not base64'
 		);
 	}
+	assertOneKey(Buffer.from(body, 'base64'));
 	return `-----BEGIN PRIVATE KEY-----\n${(body.match(/.{1,64}/g) ?? []).join('\n')}\n-----END PRIVATE KEY-----\n`;
 }
 
@@ -188,15 +205,43 @@ function bareKey(value: string): string {
 			"it is a bare 32-byte key, which is the shape of the plugin's public key, not of the private key"
 		);
 	}
+	let key: crypto.KeyObject | undefined;
 	try {
-		const key = crypto.createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
-		if (key.asymmetricKeyType === 'ed25519') return key.export({ type: 'pkcs8', format: 'pem' }).toString();
+		key = crypto.createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
 	} catch {
 		// Not PKCS#8 at all; refused below.
 	}
-	throw new SigningKeyError(
-		`it has no -----BEGIN PRIVATE KEY----- line, and the ${der.length} bytes it decodes to are not a PKCS#8 Ed25519 key`
-	);
+	if (key?.asymmetricKeyType !== 'ed25519') {
+		throw new SigningKeyError(
+			`it has no -----BEGIN PRIVATE KEY----- line, and the ${der.length} bytes it decodes to are not a PKCS#8 Ed25519 key`
+		);
+	}
+	assertOneKey(der);
+	return key.export({ type: 'pkcs8', format: 'pem' }).toString();
+}
+
+/** The length a DER SEQUENCE declares for itself, header included, or null without such a header. */
+function derExtent(der: Buffer): number | null {
+	if (der.length < 2 || der[0] !== 0x30) return null;
+	if (der[1] < 0x80) return 2 + der[1];
+	const octets = der[1] & 0x7f;
+	if (octets === 0 || octets > 3 || der.length < 2 + octets) return null;
+	let length = 0;
+	for (let i = 0; i < octets; i++) length = length * 256 + der[2 + i];
+	return 2 + octets + length;
+}
+
+/**
+ * Refuses bytes that run on past the key. OpenSSL parses the first structure
+ * and ignores the rest, so a second key pasted onto the first would load as
+ * the first while ED25519_KEY_ID names the second: ready, and refused by every
+ * site. A value that is not a key at all is left for OpenSSL to refuse.
+ */
+function assertOneKey(der: Buffer): void {
+	const extent = derExtent(der);
+	if (extent !== null && extent < der.length) {
+		throw new SigningKeyError('more data follows the key, as when a second key is pasted onto the first');
+	}
 }
 
 /** What the server would sign with right now, or why it cannot sign. */
@@ -228,9 +273,25 @@ export function signingStatus(): SigningStatus {
  * the customer: every site refuses the entitlement with `unknown_key_id` while
  * the server looks healthy. Missing configuration should stop the server, not
  * the sites.
+ *
+ * The plugin looks the kid up by exact match, so the value gets the same
+ * treatment as the key: the generator printed `ED25519_KEY_ID=stp-2026i` on the
+ * line above the key, and a whole line pasted as the value would otherwise go
+ * into every token header verbatim. Whatever is left must look like a kid.
  */
 export function activeKeyId(): string {
-	return required('ED25519_KEY_ID');
+	const raw = required('ED25519_KEY_ID');
+	const kid = raw
+		.trim()
+		.replace(/^(?:export\s+)?ED25519_KEY_ID\s*=\s*/, '')
+		.replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '')
+		.trim();
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(kid)) {
+		throw new Error(
+			`ED25519_KEY_ID is not a key id: it must be one short name such as stp-2026i, as \`npm run keys:generate\` prints it (it is ${raw.length} characters)`
+		);
+	}
+	return kid;
 }
 
 /**

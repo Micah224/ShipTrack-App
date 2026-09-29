@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { verifyLicenseToken } from '$lib/server/crypto/ed25519';
 import type { License } from '$lib/server/db/schema';
+import { findLicenseByKey } from '$lib/server/domain/licenses';
+import { meterLicense } from '$lib/server/domain/limits';
 import { claimSeat } from '$lib/server/domain/seats';
 import { POST } from './+server';
 
@@ -34,20 +36,18 @@ const license = {
 	limits: null
 } as unknown as License;
 
-const saved = { key: process.env.ED25519_PRIVATE_KEY, kid: process.env.ED25519_KEY_ID };
 let publicPem: string;
 
 beforeEach(() => {
 	const pair = crypto.generateKeyPairSync('ed25519');
-	process.env.ED25519_PRIVATE_KEY = pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-	process.env.ED25519_KEY_ID = 'stp-activate';
+	vi.stubEnv('ED25519_PRIVATE_KEY', pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+	vi.stubEnv('ED25519_KEY_ID', 'stp-activate');
 	publicPem = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-	vi.mocked(claimSeat).mockClear();
+	vi.clearAllMocks();
 });
 
 afterEach(() => {
-	process.env.ED25519_PRIVATE_KEY = saved.key;
-	process.env.ED25519_KEY_ID = saved.kid;
+	vi.unstubAllEnvs();
 	vi.restoreAllMocks();
 });
 
@@ -81,9 +81,9 @@ describe('POST /api/v1/activate', () => {
 	 * From 2026-09-24 every activation claimed its seat, then died signing: the
 	 * customer saw "Internal Error" and the seat stayed taken.
 	 */
-	it('claims nothing, and answers a coded 503, when it cannot sign', async () => {
+	it('touches nothing, and answers a coded 503, when it cannot sign', async () => {
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-		process.env.ED25519_PRIVATE_KEY = 'ED25519_PRIVATE_KEY=not-a-key';
+		vi.stubEnv('ED25519_PRIVATE_KEY', 'ED25519_PRIVATE_KEY=not-a-key');
 
 		const response = await activate();
 
@@ -91,6 +91,9 @@ describe('POST /api/v1/activate', () => {
 		expect(response.headers.get('retry-after')).toBe('300');
 		expect(await response.json()).toMatchObject({ ok: false, code: 'service_unavailable' });
 		expect(claimSeat).not.toHaveBeenCalled();
+		// Nor is the licence looked up or metered: a retry during an outage spends none of its rate budget.
+		expect(findLicenseByKey).not.toHaveBeenCalled();
+		expect(meterLicense).not.toHaveBeenCalled();
 		expect(logged).toHaveBeenCalledWith(expect.stringMatching(/cannot sign entitlements: ED25519_PRIVATE_KEY/));
 	});
 });

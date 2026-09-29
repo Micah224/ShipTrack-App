@@ -177,8 +177,7 @@ describe('normalisePem', () => {
 		expect(normalisePem(privatePem)).toBe(privatePem);
 	});
 
-	/** Refused with a message naming the problem, and not a character of the key in it. */
-	function expectRefusal(value: string, reason: RegExp) {
+	function refusalOf(value: string): string {
 		let error: unknown;
 		try {
 			loadPrivateKey(value);
@@ -186,11 +185,18 @@ describe('normalisePem', () => {
 			error = caught;
 		}
 		expect(error).toBeInstanceOf(SigningKeyError);
-		const message = (error as Error).message;
+		return (error as Error).message;
+	}
+
+	/** Refused with a message naming the problem, and no run of the value, or of the key, in it. */
+	function expectRefusal(value: string, reason: RegExp) {
+		const message = refusalOf(value);
 		expect(message).toMatch(reason);
-		const secret = body(privatePem);
-		for (let at = 0; at + 12 <= secret.length; at += 4) {
-			expect(message).not.toContain(secret.slice(at, at + 12));
+		const runs = [...value.matchAll(/[A-Za-z0-9+/]{12,}/g)].map((match) => match[0]);
+		for (const run of [...runs, body(privatePem)]) {
+			for (let at = 0; at + 12 <= run.length; at += 4) {
+				expect(message).not.toContain(run.slice(at, at + 12));
+			}
 		}
 	}
 
@@ -217,6 +223,31 @@ describe('normalisePem', () => {
 	it('refuses a key in a container other than PKCS#8', () => {
 		const openssh = `-----BEGIN OPENSSH PRIVATE KEY-----\n${body(privatePem)}\n-----END OPENSSH PRIVATE KEY-----\n`;
 		expectRefusal(openssh, /"OPENSSH PRIVATE KEY" block/);
+	});
+
+	it('names a block only by a known label, since any other label came from the value', () => {
+		const odd = `-----BEGIN SHIPTRACK SECRET-----\n${body(privatePem)}\n-----END SHIPTRACK SECRET-----\n`;
+		expectRefusal(odd, /a PEM block of an unrecognised kind/);
+		expect(refusalOf(odd)).not.toContain('SHIPTRACK');
+	});
+
+	/*
+	 * OpenSSL parses the first key and ignores what follows, so a second key
+	 * pasted onto the first loaded as the first while ED25519_KEY_ID named the
+	 * second: ready, and refused by every site.
+	 */
+	it('refuses a second key run onto the first, bare or armoured', () => {
+		const first = body(privatePem);
+		const second = body(other());
+		expectRefusal(first + second, /more data follows the key/);
+		expectRefusal(`-----BEGIN PRIVATE KEY-----\n${first}\n${second}\n-----END PRIVATE KEY-----\n`, /more data follows the key/);
+		const trailing = Buffer.concat([Buffer.from(first, 'base64'), Buffer.from('trailing')]).toString('base64');
+		expectRefusal(trailing, /more data follows the key/);
+	});
+
+	it('refuses a second key stored under another name, rather than dropping it', () => {
+		const next = `ED25519_PRIVATE_KEY_NEXT="${escaped(other())}"`;
+		expectRefusal(`${next}\nED25519_PRIVATE_KEY="${escaped(privatePem)}"`, /second private key under another variable name/);
 	});
 
 	it('refuses a copy cut short, or with text around the key', () => {
@@ -275,6 +306,29 @@ describe('signingStatus', () => {
 		withEnv({ ED25519_PRIVATE_KEY: publicPem }, () => {
 			expect(signingStatus()).toEqual({ ready: false, problem: expect.stringMatching(/holds a public key/) });
 		});
+	});
+
+	it.each([
+		['the whole .env line', 'ED25519_KEY_ID=stp-test'],
+		['an exported, quoted assignment', 'export ED25519_KEY_ID="stp-test"'],
+		['quotes', '"stp-test"'],
+		['a trailing line break', 'stp-test\n']
+	])('reads the key id from %s, and signs under the bare kid', (_name, value) => {
+		withEnv({ ED25519_KEY_ID: value }, () => {
+			expect(signingStatus()).toMatchObject({ ready: true, kid: 'stp-test' });
+			const header = JSON.parse(Buffer.from(signLicenseToken(payload()).token.split('.')[0], 'base64url').toString());
+			expect(header.kid).toBe('stp-test');
+		});
+	});
+
+	it('refuses a key id that is not one, whose tokens every site would refuse', () => {
+		for (const value of ['stp 2026i', 'ED25519_KEY_ID=stp-2026i\nED25519_PRIVATE_KEY=x', 'k'.repeat(65), privatePem]) {
+			withEnv({ ED25519_KEY_ID: value }, () => {
+				const status = signingStatus();
+				expect(status).toEqual({ ready: false, problem: expect.stringMatching(/ED25519_KEY_ID is not a key id/) });
+				expect(JSON.stringify(status)).not.toContain(privatePem.split('\n')[1].slice(0, 16));
+			});
+		}
 	});
 
 	it('reports a missing key id, which would sign tokens every site refuses', () => {

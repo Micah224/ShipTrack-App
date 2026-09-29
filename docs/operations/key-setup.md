@@ -134,9 +134,14 @@ This is where setups go wrong, because all three are "base64-ish":
   variable's own name into its value. `normalisePem()` in `crypto/ed25519.ts`
   now also accepts that line, with its heading and any neighbouring `.env`
   lines, curly or stray quotes, doubled escapes, and the base64 without its
-  BEGIN and END lines. It still refuses anything ambiguous (two private keys,
-  a public key, a bare 32-byte string), and every refusal says what it found
-  without echoing the value. The multi-line form is still the one to store.
+  BEGIN and END lines. It still refuses anything ambiguous: two private keys,
+  whether as two blocks, as a second body run onto the first (OpenSSL would
+  silently load the first), or under another variable name; a public key; a
+  bare 32-byte string. Every refusal says what it found without echoing the
+  value. `ED25519_KEY_ID` gets the same treatment (`ED25519_KEY_ID=stp-2026i`
+  or `"stp-2026i"` reads as `stp-2026i`), and anything that is still not a
+  short key id is refused, because the plugin matches the kid exactly. The
+  multi-line form is still the one to store.
 - **the plugin constant** — standard base64 of the **raw 32 bytes**, *with* `=`
   padding (`SODIUM_BASE64_VARIANT_ORIGINAL`). Not PEM. Not base64url. A PEM blob
   here fails with `bad_public_key`.
@@ -689,7 +694,7 @@ Other codes you will see, from layers above the verifier:
 | `unverifiable:<reason>` | Activation reached the server but the returned token failed the check above. The token is *not* stored. |
 | `transport_error` | The site could not reach the API at all. Check `LicenseClient::DEFAULT_BASE` resolves, or set the `shiptrack_pro/license_api_base` filter. |
 | `unknown_key` (404) | The server has no licence with that key hash. |
-| `service_unavailable` (503) | The server cannot sign entitlements, so no seat is claimed and nothing is recorded. Probe `GET /api/v1/heartbeat` and read `[licence] cannot sign entitlements:` in the runtime log; section 5. Nothing on the customer's site needs to change. |
+| `service_unavailable` (503) | The server cannot sign entitlements. It answers before reading or writing anything: no seat is claimed, no check-in recorded, no rate budget spent. Probe `GET /api/v1/heartbeat` and read `[licence] cannot sign entitlements:` in the runtime log; section 5. Nothing on the customer's site needs to change. |
 | `seat_limit_reached` (403) | All seats in use. Deactivate one, or raise `max_seats`. |
 | `decryption_failed` | The stored key or token cannot be decrypted — WordPress salts were regenerated. Re-enter the key. |
 | `not_configured` | `ADMIN_EMAIL` or `ADMIN_PASSWORD_HASH` is blank. |

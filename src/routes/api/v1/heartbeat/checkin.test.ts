@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { verifyLicenseToken } from '$lib/server/crypto/ed25519';
 import { getDb } from '$lib/server/db';
 import type { License } from '$lib/server/db/schema';
+import { findLicenseByKey } from '$lib/server/domain/licenses';
+import { meterLicense } from '$lib/server/domain/limits';
 import { POST } from './+server';
 
 /*
@@ -43,20 +45,18 @@ const license = {
 	limits: null
 } as unknown as License;
 
-const saved = { key: process.env.ED25519_PRIVATE_KEY, kid: process.env.ED25519_KEY_ID };
 let publicPem: string;
 
 beforeEach(() => {
 	const pair = crypto.generateKeyPairSync('ed25519');
-	process.env.ED25519_PRIVATE_KEY = pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-	process.env.ED25519_KEY_ID = 'stp-heartbeat';
+	vi.stubEnv('ED25519_PRIVATE_KEY', pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+	vi.stubEnv('ED25519_KEY_ID', 'stp-heartbeat');
 	publicPem = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-	update.mockClear();
+	vi.clearAllMocks();
 });
 
 afterEach(() => {
-	process.env.ED25519_PRIVATE_KEY = saved.key;
-	process.env.ED25519_KEY_ID = saved.kid;
+	vi.unstubAllEnvs();
 	vi.restoreAllMocks();
 });
 
@@ -86,12 +86,14 @@ describe('POST /api/v1/heartbeat', () => {
 
 	it('records nothing, and answers a coded 503, when it cannot sign', async () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
-		process.env.ED25519_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\nMC4CAQAw';
+		vi.stubEnv('ED25519_PRIVATE_KEY', '-----BEGIN PRIVATE KEY-----\nMC4CAQAw');
 
 		const response = await heartbeat();
 
 		expect(response.status).toBe(503);
 		expect(await response.json()).toMatchObject({ ok: false, code: 'service_unavailable' });
 		expect(update).not.toHaveBeenCalled();
+		expect(findLicenseByKey).not.toHaveBeenCalled();
+		expect(meterLicense).not.toHaveBeenCalled();
 	});
 });

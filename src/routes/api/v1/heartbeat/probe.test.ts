@@ -3,19 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { rawPublicKeyBase64 } from '$lib/server/crypto/ed25519';
 import { GET } from './+server';
 
-const saved = { key: process.env.ED25519_PRIVATE_KEY, kid: process.env.ED25519_KEY_ID };
 let publicPem: string;
 
 beforeEach(() => {
 	const pair = crypto.generateKeyPairSync('ed25519');
-	process.env.ED25519_PRIVATE_KEY = pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-	process.env.ED25519_KEY_ID = 'stp-probe';
+	vi.stubEnv('ED25519_PRIVATE_KEY', pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+	vi.stubEnv('ED25519_KEY_ID', 'stp-probe');
 	publicPem = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 });
 
 afterEach(() => {
-	process.env.ED25519_PRIVATE_KEY = saved.key;
-	process.env.ED25519_KEY_ID = saved.kid;
+	vi.unstubAllEnvs();
 	vi.restoreAllMocks();
 });
 
@@ -40,7 +38,7 @@ describe('GET /api/v1/heartbeat', () => {
 	 */
 	it('is not ready, with a 503 and the reason logged, when it cannot sign', async () => {
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-		process.env.ED25519_PRIVATE_KEY = publicPem;
+		vi.stubEnv('ED25519_PRIVATE_KEY', publicPem);
 
 		const response = await probe();
 
@@ -56,7 +54,7 @@ describe('GET /api/v1/heartbeat', () => {
 
 	it('does not put the reason in the public response', async () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
-		delete process.env.ED25519_KEY_ID;
+		vi.stubEnv('ED25519_KEY_ID', undefined);
 		const text = await (await probe()).text();
 		expect(text).not.toMatch(/ED25519|environment/);
 	});

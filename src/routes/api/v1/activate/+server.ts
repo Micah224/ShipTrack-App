@@ -37,6 +37,15 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error;
 	}
 
+	/*
+	 * Before anything is read or written. From 2026-09-24 every activation
+	 * claimed its seat, then died signing, and the customer saw only "Internal
+	 * Error". Checking first also keeps a request that cannot be answered from
+	 * counting against the licence's rate limits.
+	 */
+	const signing = signingStatus();
+	if (!signing.ready) return signingUnavailable(signing.problem);
+
 	const license = await findLicenseByKey(key);
 	if (!license) {
 		/*
@@ -68,15 +77,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!site.domain) {
 		return fail(refusal('invalid_request', 'site_url did not contain a usable host.', 400));
 	}
-
-	/*
-	 * Before the seat, not after. The seat is claimed in its own statement and
-	 * stays claimed, so an activation that cannot be signed must not reach it:
-	 * from 2026-09-24 every attempt registered its site, then died signing, and
-	 * the customer saw only "Internal Error".
-	 */
-	const signing = signingStatus();
-	if (!signing.ready) return signingUnavailable(signing.problem);
 
 	const outcome = await claimSeat(license, installId, site, telemetry);
 
