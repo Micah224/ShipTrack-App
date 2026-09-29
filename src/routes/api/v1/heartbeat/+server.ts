@@ -1,13 +1,15 @@
+import { json } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/db';
 import { activations } from '$lib/server/db/schema';
+import { signingStatus } from '$lib/server/crypto/ed25519';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
 import { findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
 import { countSeats, findActivation } from '$lib/server/domain/seats';
 import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
-import { clientIp, fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
+import { clientIp, fail, ok, readJson, limited, rateLimitHeaders, signingUnavailable } from '$lib/server/http';
 import { latestRelease } from '$lib/server/domain/releases';
 import { InvalidField, optionalStr, optionalStrArray, str } from '$lib/server/validate';
 
@@ -48,6 +50,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (error instanceof InvalidField) return fail(refusal('invalid_request', error.message, 400));
 		throw error;
 	}
+
+	// Before anything is read or written: a check-in that cannot be answered records nothing.
+	const signing = signingStatus();
+	if (!signing.ready) return signingUnavailable(signing.problem);
 
 	const license = await findLicenseByKey(key);
 	if (!license) {
@@ -132,5 +138,39 @@ export const POST: RequestHandler = async ({ request }) => {
 	}, 200, rateLimitHeaders(rate));
 };
 
-/** Liveness for uptime checks; deliberately says nothing about any licence. */
-export const GET: RequestHandler = async () => ok({ service: 'shiptrack-licence', ready: true });
+let lastLogged = 0;
+
+/**
+ * Liveness for uptime checks, and the place to confirm the server can sign.
+ *
+ * Says nothing about any licence. `ready` used to be a constant, so the probe
+ * read healthy for five days while every activation and heartbeat failed on a
+ * signing key it could not load; the update check, which signs nothing, kept
+ * working and made it look like a customer problem. Now it is false, with a
+ * 503, whenever an entitlement could not be signed, and the reason is logged.
+ *
+ * When ready it names the signing key: `kid`, and `public_key` in the form the
+ * plugin's `TokenVerifier::PUBLIC_KEYS` holds. The plugin must carry that exact
+ * pair, or every site refuses the token (`unknown_key_id`, `bad_signature`).
+ * Both are public already, in every plugin zip and every token header.
+ */
+export const GET: RequestHandler = async () => {
+	const headers = { 'Cache-Control': 'no-store' };
+	const signing = signingStatus();
+	if (!signing.ready) {
+		// The site footer polls this on every page view: one line a minute per instance is enough.
+		if (Date.now() - lastLogged >= 60_000) {
+			lastLogged = Date.now();
+			console.error(`[licence] not ready: ${signing.problem}`);
+		}
+		return json(
+			{ ok: false, service: 'shiptrack-licence', ready: false, problems: ['signing'] },
+			{ status: 503, headers }
+		);
+	}
+	return ok(
+		{ service: 'shiptrack-licence', ready: true, kid: signing.kid, public_key: signing.publicKey },
+		200,
+		headers
+	);
+};

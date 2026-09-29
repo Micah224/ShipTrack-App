@@ -1,10 +1,11 @@
 import type { RequestHandler } from './$types';
+import { signingStatus } from '$lib/server/crypto/ed25519';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
 import { audit, findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
 import { claimSeat } from '$lib/server/domain/seats';
 import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
-import { clientIp, fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
+import { clientIp, fail, ok, readJson, limited, rateLimitHeaders, signingUnavailable } from '$lib/server/http';
 import { InvalidField, optionalStr, optionalStrArray, str } from '$lib/server/validate';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -35,6 +36,15 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (error instanceof InvalidField) return fail(refusal('invalid_request', error.message, 400));
 		throw error;
 	}
+
+	/*
+	 * Before anything is read or written. From 2026-09-24 every activation
+	 * claimed its seat, then died signing, and the customer saw only "Internal
+	 * Error". Checking first also keeps a request that cannot be answered from
+	 * counting against the licence's rate limits.
+	 */
+	const signing = signingStatus();
+	if (!signing.ready) return signingUnavailable(signing.problem);
 
 	const license = await findLicenseByKey(key);
 	if (!license) {
