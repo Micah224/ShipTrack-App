@@ -38,43 +38,186 @@ export interface SignedToken {
 const ALG = 'Ed25519';
 const TYP = 'STP-LIC';
 
+const VARIABLE = 'ED25519_PRIVATE_KEY';
+
+/**
+ * Why the stored signing key cannot be used.
+ *
+ * Every message names what was found (a public key, two keys, a copy cut
+ * short) and never any part of the value: it reaches the logs, and the only
+ * useful thing in a private key is the thing that must not leak.
+ */
+export class SigningKeyError extends Error {
+	constructor(reason: string) {
+		super(
+			`${VARIABLE} is not usable: ${reason}. It must hold the private key from \`npm run keys:generate\`, ` +
+				'from -----BEGIN PRIVATE KEY----- to -----END PRIVATE KEY----- (docs/operations/key-setup.md).'
+		);
+		this.name = 'SigningKeyError';
+	}
+}
+
 function privateKey(): crypto.KeyObject {
-	const key = normalisePem(required('ED25519_PRIVATE_KEY'));
-	return crypto.createPrivateKey({ key, format: 'pem' });
+	return loadPrivateKey(required(VARIABLE));
+}
+
+/** The stored value as a signing key, or a SigningKeyError saying what is wrong with it. */
+export function loadPrivateKey(raw: string): crypto.KeyObject {
+	const pem = normalisePem(raw);
+	let key: crypto.KeyObject;
+	try {
+		key = crypto.createPrivateKey({ key: pem, format: 'pem' });
+	} catch {
+		throw new SigningKeyError(
+			'it has a PRIVATE KEY block, but what is inside it is not a valid key; the copy may be incomplete'
+		);
+	}
+	if (key.asymmetricKeyType !== 'ed25519') {
+		throw new SigningKeyError(`its key type is ${key.asymmetricKeyType}, and licences are signed with Ed25519`);
+	}
+	return key;
 }
 
 /**
  * The PEM as it was stored, rebuilt into the form OpenSSL accepts.
  *
- * `keys:generate` prints the key for `.env`: double-quoted, newlines escaped as
- * `\n`. Pasted verbatim into Vercel, which stores values as typed, the quotes
- * and backslashes reach `createPrivateKey`, and so does a PEM whose line breaks
- * became spaces on the way through a browser field. OpenSSL reports every one
- * of these as the same `DECODER routines::unsupported`, naming nothing, and
- * every activation fails. Base64 contains no quote, backslash or whitespace, so
- * stripping them from the body cannot change a correctly stored key.
+ * A key reaches Vercel's value box by copy and paste, and arrives in whatever
+ * shape it was copied in. OpenSSL reports every shape but the canonical one as
+ * `DECODER routines::unsupported`, naming nothing, and every activation fails.
+ * So each unambiguous shape is rebuilt here:
+ *
+ * - The whole `.env` line, name included. Until 2026-09-29 the generator
+ *   printed the key under the heading "Vercel environment variable" as
+ *   `ED25519_PRIVATE_KEY="-----BEGIN…\n…"`, and following that label puts the
+ *   name, the quotes and the escapes into the value.
+ * - What a selection picks up around that line: the generator's `#` comments,
+ *   blank lines, and neighbouring assignments such as `ED25519_KEY_ID=…`.
+ * - Quotes: straight or curly, a pair or one left behind by a short selection.
+ * - Line breaks escaped as `\n` (or `\\n` after a trip through JSON), turned
+ *   into spaces by a browser field, or dropped.
+ * - The base64 alone, without its BEGIN and END lines.
+ *
+ * Base64 has no quote, backslash, `#` or whitespace, so none of this can alter a
+ * key that was stored correctly. What stays refused is anything ambiguous: two
+ * private keys (signing with the first while ED25519_KEY_ID names the other
+ * makes every site refuse the token), a public key, a bare 32-byte string (the
+ * plugin's public key has that shape, and signing with it as a seed would mint
+ * tokens no site accepts), or text beyond the key.
  */
 export function normalisePem(raw: string): string {
-	let value = raw.trim();
-	if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
-		value = value.slice(1, -1);
+	const kept: string[] = [];
+	for (const line of raw.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+		const trimmed = line.trim();
+		// The generator's comment lines, and blank lines, copied along with the key.
+		if (trimmed === '' || trimmed.startsWith('#')) continue;
+		/*
+		 * `.env` lines. The key's own name is peeled off its value; a neighbouring
+		 * line such as ED25519_KEY_ID=… is dropped. The name must contain an
+		 * underscore, which standard base64 never does, so no line of the key
+		 * itself can be mistaken for one.
+		 */
+		const assignment = /^(?:export\s+)?([A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]*)\s*=(.*)$/.exec(trimmed);
+		if (!assignment) kept.push(trimmed);
+		else if (assignment[1] === VARIABLE) kept.push(assignment[2].trim());
 	}
-	value = value.replace(/\\r/g, '').replace(/\\n/g, '\n').trim();
+	let value = kept.join('\n').replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '').trim();
+	value = value.replace(/\\+r/g, '').replace(/\\+n/g, '\n').replace(/\r/g, '').trim();
 
-	/*
-	 * Exactly one PKCS#8 block and nothing else. Picking the first of two keys
-	 * pasted together during a rotation would sign with one key while
-	 * ED25519_KEY_ID names the other, and every site would refuse the token.
-	 */
-	const armour = /^-----BEGIN PRIVATE KEY-----([A-Za-z0-9+/=\s]+)-----END PRIVATE KEY-----$/.exec(value);
-	if (!armour) {
-		// Never echo the value: this message reaches logs.
-		throw new Error(
-			'ED25519_PRIVATE_KEY must hold exactly one PEM block, from BEGIN PRIVATE KEY to END PRIVATE KEY.'
+	if (value === '') throw new SigningKeyError('it is empty');
+
+	const begins = [...value.matchAll(/-----BEGIN ([A-Z0-9 ]{1,40})-----/g)].map((match) => match[1]);
+	if (begins.length === 0) {
+		if (!value.includes('-----END ')) return bareKey(value);
+		throw new SigningKeyError('the copy was cut short: there is an END line but no -----BEGIN PRIVATE KEY----- line');
+	}
+
+	const foreign = begins.find((label) => label !== 'PRIVATE KEY' && label !== 'PUBLIC KEY');
+	if (foreign) {
+		throw new SigningKeyError(`it holds a "${foreign}" block, not the PKCS#8 "PRIVATE KEY" block the server signs with`);
+	}
+	const privates = begins.filter((label) => label === 'PRIVATE KEY').length;
+	if (privates === 0 && begins.length > 0) {
+		throw new SigningKeyError(
+			'it holds a public key (BEGIN PUBLIC KEY). The public half goes into the plugin; this variable needs the private half'
 		);
 	}
-	const body = armour[1].replace(/\s+/g, '').match(/.{1,64}/g) ?? [];
-	return `-----BEGIN PRIVATE KEY-----\n${body.join('\n')}\n-----END PRIVATE KEY-----\n`;
+	if (privates > 1) {
+		throw new SigningKeyError(
+			`it holds ${privates} private keys. Keep only the one whose public half the plugin lists under ED25519_KEY_ID`
+		);
+	}
+	if (begins.length > 1) {
+		throw new SigningKeyError('it holds a public key block as well as the private key. Store the private key alone');
+	}
+
+	const block = /-----BEGIN PRIVATE KEY-----([\s\S]*?)-----END PRIVATE KEY-----/.exec(value);
+	if (!block) {
+		throw new SigningKeyError('the copy was cut short: there is no -----END PRIVATE KEY----- line after the BEGIN line');
+	}
+	if (value.slice(0, block.index).trim() !== '' || value.slice(block.index + block[0].length).trim() !== '') {
+		throw new SigningKeyError(
+			'it holds other text before or after the key block, such as another variable or more of the generator output'
+		);
+	}
+
+	const body = block[1].replace(/\s+/g, '');
+	if (body === '') throw new SigningKeyError('there is nothing between its BEGIN and END lines');
+	if (!/^[A-Za-z0-9+/]+={0,2}$/.test(body)) {
+		throw new SigningKeyError(
+			body.includes('\\')
+				? 'the lines between BEGIN and END contain a backslash, so an escape sequence survived'
+				: 'the lines between BEGIN and END contain characters that are not base64'
+		);
+	}
+	return `-----BEGIN PRIVATE KEY-----\n${(body.match(/.{1,64}/g) ?? []).join('\n')}\n-----END PRIVATE KEY-----\n`;
+}
+
+/** No PEM armour at all: accepted only when it is unmistakably a PKCS#8 Ed25519 key. */
+function bareKey(value: string): string {
+	const compact = value.replace(/\s+/g, '');
+	// Shorter than a 32-byte key in base64 is not key material of any kind.
+	if (compact.length < 43 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
+		const lines = value.split('\n').length;
+		throw new SigningKeyError(
+			`it has no -----BEGIN PRIVATE KEY----- line (it is ${value.length} characters on ${lines} line${lines === 1 ? '' : 's'})`
+		);
+	}
+	const der = Buffer.from(compact, 'base64');
+	if (der.length === 32) {
+		throw new SigningKeyError(
+			"it is a bare 32-byte key, which is the shape of the plugin's public key, not of the private key"
+		);
+	}
+	try {
+		const key = crypto.createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+		if (key.asymmetricKeyType === 'ed25519') return key.export({ type: 'pkcs8', format: 'pem' }).toString();
+	} catch {
+		// Not PKCS#8 at all; refused below.
+	}
+	throw new SigningKeyError(
+		`it has no -----BEGIN PRIVATE KEY----- line, and the ${der.length} bytes it decodes to are not a PKCS#8 Ed25519 key`
+	);
+}
+
+/** What the server would sign with right now, or why it cannot sign. */
+export type SigningStatus = { ready: true; kid: string; publicKey: string } | { ready: false; problem: string };
+
+/**
+ * Checked before a seat is claimed, and reported by the liveness probe.
+ *
+ * `publicKey` is base64 of the raw 32 bytes, the form the plugin's
+ * `TokenVerifier::PUBLIC_KEYS` holds, so comparing the two is the whole proof
+ * that server and plugin hold halves of one pair. Both values are public: the
+ * key ships in every plugin zip and the kid in every token header.
+ */
+export function signingStatus(): SigningStatus {
+	try {
+		const kid = activeKeyId();
+		const der = crypto.createPublicKey(privateKey()).export({ type: 'spki', format: 'der' });
+		return { ready: true, kid, publicKey: Buffer.from(der.subarray(der.length - 32)).toString('base64') };
+	} catch (error) {
+		return { ready: false, problem: error instanceof Error ? error.message : String(error) };
+	}
 }
 
 /**

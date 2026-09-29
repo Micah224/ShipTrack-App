@@ -125,9 +125,18 @@ This is where setups go wrong, because all three are "base64-ish":
   `error:1E08010C:DECODER routines::unsupported`, which names nothing useful.
   Production hit exactly this: `/api/v1/activate` returned 500 with that error
   on 2026-09-24, against a key stored on 2026-09-04 and not changed since.
-  `normalisePem()` in `crypto/ed25519.ts` now rebuilds the PEM from any of
-  these forms (quotes, escaped `\n`, line breaks lost to spaces), so both
-  work, but the multi-line form is still the one to store.
+
+  The first fix accepted quotes, escaped `\n` and line breaks lost to spaces,
+  and production still failed, now with `must hold exactly one PEM block`. The
+  generator of 2026-09-04 printed the key under the heading
+  `# Vercel environment variable` as the *whole line*,
+  `ED25519_PRIVATE_KEY="-----BEGIN…\n…"`, and following that label puts the
+  variable's own name into its value. `normalisePem()` in `crypto/ed25519.ts`
+  now also accepts that line, with its heading and any neighbouring `.env`
+  lines, curly or stray quotes, doubled escapes, and the base64 without its
+  BEGIN and END lines. It still refuses anything ambiguous (two private keys,
+  a public key, a bare 32-byte string), and every refusal says what it found
+  without echoing the value. The multi-line form is still the one to store.
 - **the plugin constant** — standard base64 of the **raw 32 bytes**, *with* `=`
   padding (`SODIUM_BASE64_VARIANT_ORIGINAL`). Not PEM. Not base64url. A PEM blob
   here fails with `bad_public_key`.
@@ -482,12 +491,36 @@ Verify against the origin the plugin will really call:
 ```bash
 curl -i https://ship-track-app.vercel.app/api/v1/heartbeat
 # HTTP/2 200
-# {"ok":true,"service":"shiptrack-licence","ready":true}
+# {"ok":true,"service":"shiptrack-licence","ready":true,"kid":"stp-2026i","public_key":"4p/5…cCU="}
 ```
+
+`ready` is true only when the server can sign an entitlement: `ED25519_KEY_ID`
+is set and `ED25519_PRIVATE_KEY` loads as an Ed25519 key. `kid` and
+`public_key` then name the key it signs with, and **they must equal an entry
+in the plugin's `TokenVerifier::PUBLIC_KEYS`**, key and value alike:
+
+```bash
+curl -s https://ship-track-app.vercel.app/api/v1/heartbeat | jq -r '"\(.kid) \(.public_key)"'
+grep -n "=> '" ../ShipTrack-Pro/app/Licensing/TokenVerifier.php
+```
+
+The kid and key must match one entry character for character. That
+comparison is the whole proof that the server and the shipped plugin hold
+halves of one pair; both values are public already, in every plugin zip and
+every token header.
 
 Read the status line, not just the body:
 
-- **200** — good.
+- **200** — good, provided `kid` and `public_key` match the plugin.
+- **503** with `"ready":false,"problems":["signing"]` — the server cannot sign,
+  so every activation and heartbeat answers `service_unavailable` while the
+  update check, which signs nothing, still works. The reason is in the runtime
+  log, never in the response: search the project's logs for
+  `[licence] not ready:`. It reads like
+  `ED25519_PRIVATE_KEY is not usable: it holds a public key (BEGIN PUBLIC KEY)…`
+  and names the fix. Until 2026-09-29 this probe returned `ready: true`
+  unconditionally, which is how five days of failed activations went
+  unnoticed.
 - **`DEPLOYMENT_NOT_FOUND`** in the body — the domain is attached to no
   production deployment.
 - **302 to `vercel.com/sso-api`** *on this host* — that would be a real
@@ -656,10 +689,12 @@ Other codes you will see, from layers above the verifier:
 | `unverifiable:<reason>` | Activation reached the server but the returned token failed the check above. The token is *not* stored. |
 | `transport_error` | The site could not reach the API at all. Check `LicenseClient::DEFAULT_BASE` resolves, or set the `shiptrack_pro/license_api_base` filter. |
 | `unknown_key` (404) | The server has no licence with that key hash. |
+| `service_unavailable` (503) | The server cannot sign entitlements, so no seat is claimed and nothing is recorded. Probe `GET /api/v1/heartbeat` and read `[licence] cannot sign entitlements:` in the runtime log; section 5. Nothing on the customer's site needs to change. |
 | `seat_limit_reached` (403) | All seats in use. Deactivate one, or raise `max_seats`. |
 | `decryption_failed` | The stored key or token cannot be decrypted — WordPress salts were regenerated. Re-enter the key. |
 | `not_configured` | `ADMIN_EMAIL` or `ADMIN_PASSWORD_HASH` is blank. |
 | `rate_limited` | Ten failed admin logins from one address in fifteen minutes. The correct password is refused too until the window passes. |
+| `ED25519_PRIVATE_KEY is not usable: …` | In the log. The rest of the sentence says what the stored value holds instead of one Ed25519 private key. Store the multi-line PEM from `npm run keys:generate`; section 1. |
 | `relation "…" does not exist` | In the log, under a drizzle `Failed query`. `DATABASE_URL` names a database the migration never ran on — here, one provisioned from Vercel's Storage tab into a Neon account that is not yours. Section 4. |
 | `column "…" does not exist` | The same fault on a table that predates the current schema, so it exists but has the wrong shape. Reads as a working connection, which is what makes it slow to spot. |
 

@@ -1,10 +1,11 @@
 import type { RequestHandler } from './$types';
+import { signingStatus } from '$lib/server/crypto/ed25519';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
 import { audit, findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
 import { claimSeat } from '$lib/server/domain/seats';
 import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
-import { clientIp, fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
+import { clientIp, fail, ok, readJson, limited, rateLimitHeaders, signingUnavailable } from '$lib/server/http';
 import { InvalidField, optionalStr, optionalStrArray, str } from '$lib/server/validate';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -67,6 +68,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!site.domain) {
 		return fail(refusal('invalid_request', 'site_url did not contain a usable host.', 400));
 	}
+
+	/*
+	 * Before the seat, not after. The seat is claimed in its own statement and
+	 * stays claimed, so an activation that cannot be signed must not reach it:
+	 * from 2026-09-24 every attempt registered its site, then died signing, and
+	 * the customer saw only "Internal Error".
+	 */
+	const signing = signingStatus();
+	if (!signing.ready) return signingUnavailable(signing.problem);
 
 	const outcome = await claimSeat(license, installId, site, telemetry);
 

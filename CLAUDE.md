@@ -96,6 +96,16 @@ write and truncate. Never point them at production.
   repo's `node_modules` and certifies a broken build** — and imports every chunk,
   not just the handler, since route modules load lazily.
 
+- **The server can look healthy while no site can activate.** The update
+  check signs nothing, so it keeps answering when `ED25519_PRIVATE_KEY` will
+  not load, while every activate and heartbeat fails. From 2026-09-24 to
+  2026-09-29 production held the key as the whole `.env` line, name and all
+  (the 2026-09-04 generator printed it that way under a "Vercel" heading), and
+  the liveness probe said `ready: true` throughout. `GET /api/v1/heartbeat` now
+  tries to load the key, answers 503 when it cannot, and otherwise reports the
+  `kid` and `public_key` it signs with. After any change to the key, compare
+  those with `TokenVerifier::PUBLIC_KEYS` in the plugin.
+
 - **Relative imports under `src/lib/server/` must carry the `.ts` extension.**
   Vite resolves extensionless specifiers; Node's ESM loader does not, and the
   `scripts/*.ts` CLIs run under bare Node. `license:mint` died on

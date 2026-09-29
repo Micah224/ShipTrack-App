@@ -1,8 +1,11 @@
 import crypto from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
+	loadPrivateKey,
 	normalisePem,
 	rawPublicKeyBase64,
+	signingStatus,
+	SigningKeyError,
 	signLicenseToken,
 	verifyLicenseToken,
 	type LicenseTokenPayload
@@ -112,19 +115,47 @@ describe('rawPublicKeyBase64', () => {
 });
 
 describe('normalisePem', () => {
+	const escaped = (pem: string) => pem.trimEnd().replace(/\n/g, '\\n');
+	const body = (pem: string) => pem.split('\n').slice(1, -2).join('');
+
 	/*
 	 * The shapes a PEM takes on its way into a dashboard field. Each one fails in
 	 * createPrivateKey with the same "DECODER routines::unsupported", which is
 	 * how production activation broke with nothing in the log naming the cause.
 	 */
 	const mangled: [string, (pem: string) => string][] = [
-		['the .env line pasted verbatim', (pem) => `"${pem.trimEnd().replace(/\n/g, '\\n')}"`],
-		['escaped newlines without the quotes', (pem) => pem.trimEnd().replace(/\n/g, '\\n')],
+		['the .env value pasted verbatim', (pem) => `"${escaped(pem)}"`],
+		['escaped newlines without the quotes', (pem) => escaped(pem)],
 		['single-quoted', (pem) => `'${pem}'`],
 		['line breaks turned into spaces', (pem) => pem.replace(/\n/g, ' ')],
 		['line breaks removed', (pem) => pem.replace(/\n/g, '')],
 		['Windows line endings', (pem) => pem.replace(/\n/g, '\r\n')],
-		['surrounding whitespace', (pem) => `\n  ${pem}\n\n`]
+		['surrounding whitespace', (pem) => `\n  ${pem}\n\n`],
+		/*
+		 * What production held from 2026-09-04: the generator printed the key under
+		 * "# Vercel environment variable" as this whole line, name and all, and
+		 * every activation and heartbeat failed on it from 2026-09-24.
+		 */
+		['the whole .env line, name and all', (pem) => `ED25519_PRIVATE_KEY="${escaped(pem)}"`],
+		[
+			'that line under its generator heading',
+			(pem) => `# Vercel environment variable (keep secret)\nED25519_PRIVATE_KEY="${escaped(pem)}"\n`
+		],
+		[
+			'that line with the key id above it',
+			(pem) => `# Key id\nED25519_KEY_ID=stp-2026i\n\n# Vercel environment variable (keep secret)\nED25519_PRIVATE_KEY="${escaped(pem)}"`
+		],
+		['an exported shell assignment', (pem) => `export ED25519_PRIVATE_KEY='${pem.trimEnd()}'`],
+		['a multi-line dotenv value', (pem) => `ED25519_PRIVATE_KEY="${pem.trimEnd()}"`],
+		[
+			'the Vercel block under its generator comments',
+			(pem) => `# Private key for Vercel (keep secret). Vercel stores values verbatim and\n# unescapes nothing, so paste THIS form.\n${pem}`
+		],
+		['curly quotes from a rich-text copy', (pem) => `“${pem.trimEnd()}”`],
+		['a closing quote lost to a short selection', (pem) => `"${escaped(pem)}`],
+		['escapes doubled by a trip through JSON', (pem) => pem.trimEnd().replace(/\n/g, '\\\\n')],
+		['a byte-order mark', (pem) => `\uFEFF${pem}`],
+		['the base64 alone, without BEGIN and END', (pem) => body(pem)]
 	];
 
 	it.each(mangled)('recovers %s', (_name, mangle) => {
@@ -146,22 +177,109 @@ describe('normalisePem', () => {
 		expect(normalisePem(privatePem)).toBe(privatePem);
 	});
 
-	it('refuses a value with no PEM armour, without echoing it', () => {
-		const secret = 'MC4CAQAwBQYDK2VwBCIEIKnotarealkeyatallbutshaped==';
-		expect(() => normalisePem(secret)).toThrow(/exactly one PEM block/);
-		expect(() => normalisePem(secret)).not.toThrow(new RegExp(secret.slice(0, 12)));
+	/** Refused with a message naming the problem, and not a character of the key in it. */
+	function expectRefusal(value: string, reason: RegExp) {
+		let error: unknown;
+		try {
+			loadPrivateKey(value);
+		} catch (caught) {
+			error = caught;
+		}
+		expect(error).toBeInstanceOf(SigningKeyError);
+		const message = (error as Error).message;
+		expect(message).toMatch(reason);
+		const secret = body(privatePem);
+		for (let at = 0; at + 12 <= secret.length; at += 4) {
+			expect(message).not.toContain(secret.slice(at, at + 12));
+		}
+	}
+
+	const other = () =>
+		crypto.generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+
+	it('refuses an empty value, or one that is only comments', () => {
+		expectRefusal('', /it is empty/);
+		expectRefusal('# Vercel environment variable (keep secret)\n', /it is empty/);
+		expectRefusal('ED25519_PRIVATE_KEY=""', /it is empty/);
+	});
+
+	it('refuses a public key, in either form, rather than signing with it', () => {
+		expectRefusal(publicPem, /holds a public key \(BEGIN PUBLIC KEY\)/);
+		// The plugin's constant: 32 raw bytes. Taken as a seed it would sign tokens no site accepts.
+		expectRefusal(rawPublicKeyBase64(publicPem), /bare 32-byte key/);
 	});
 
 	it('refuses two keys pasted together rather than signing with the first', () => {
-		const next = crypto
-			.generateKeyPairSync('ed25519')
-			.privateKey.export({ type: 'pkcs8', format: 'pem' })
-			.toString();
-		expect(() => normalisePem(privatePem + next)).toThrow(/exactly one PEM block/);
+		expectRefusal(privatePem + other(), /holds 2 private keys/);
+		expectRefusal(`${privatePem}\n${publicPem}`, /public key block as well as the private key/);
 	});
 
-	it('refuses anything outside the block', () => {
-		expect(() => normalisePem(`${privatePem}trailing`)).toThrow(/exactly one PEM block/);
-		expect(() => normalisePem(`KEY=${privatePem}`)).toThrow(/exactly one PEM block/);
+	it('refuses a key in a container other than PKCS#8', () => {
+		const openssh = `-----BEGIN OPENSSH PRIVATE KEY-----\n${body(privatePem)}\n-----END OPENSSH PRIVATE KEY-----\n`;
+		expectRefusal(openssh, /"OPENSSH PRIVATE KEY" block/);
+	});
+
+	it('refuses a copy cut short, or with text around the key', () => {
+		expectRefusal(privatePem.split('-----END')[0], /no -----END PRIVATE KEY----- line after the BEGIN line/);
+		expectRefusal(privatePem.split('\n').slice(1).join('\n'), /an END line but no -----BEGIN PRIVATE KEY----- line/);
+		expectRefusal('-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----\n', /nothing between its BEGIN and END lines/);
+		expectRefusal(`${privatePem}trailing`, /other text before or after the key block/);
+		expectRefusal(`KEY=${privatePem}`, /other text before or after the key block/);
+		expectRefusal(`${privatePem}    'stp-2026i' => 'abc=',\n`, /other text before or after the key block/);
+	});
+
+	it('refuses a body that is not base64, and says when an escape survived', () => {
+		const lines = privatePem.split('\n');
+		expectRefusal([lines[0], `${lines[1]}\\t`, ...lines.slice(2)].join('\n'), /backslash/);
+		expectRefusal([lines[0], `${lines[1]}*`, ...lines.slice(2)].join('\n'), /not base64/);
+	});
+
+	it('refuses armour-less text that is not a key, giving only its size', () => {
+		expectRefusal('not a key at all', /no -----BEGIN PRIVATE KEY----- line \(it is 16 characters on 1 line\)/);
+		expectRefusal(crypto.randomBytes(48).toString('base64'), /the 48 bytes it decodes to are not a PKCS#8 Ed25519 key/);
+	});
+
+	it('refuses a valid PEM that holds a damaged key or another algorithm', () => {
+		const damaged = privatePem.replace(/MC4CAQAwBQYDK2Vw/, 'MC4CAQAwBQYDK2Vx');
+		expectRefusal(damaged, /not a valid key/);
+		const ec = crypto
+			.generateKeyPairSync('ec', { namedCurve: 'P-256' })
+			.privateKey.export({ type: 'pkcs8', format: 'pem' })
+			.toString();
+		expectRefusal(ec, /its key type is ec, and licences are signed with Ed25519/);
+	});
+});
+
+describe('signingStatus', () => {
+	function withEnv(env: Record<string, string | undefined>, run: () => void) {
+		const saved = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]));
+		for (const [name, value] of Object.entries(env)) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+		try {
+			run();
+		} finally {
+			for (const [name, value] of Object.entries(saved)) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
+		}
+	}
+
+	it('names the signing key in the form the plugin lists it', () => {
+		expect(signingStatus()).toEqual({ ready: true, kid: 'stp-test', publicKey: rawPublicKeyBase64(publicPem) });
+	});
+
+	it('reports a key it cannot load, with the reason', () => {
+		withEnv({ ED25519_PRIVATE_KEY: publicPem }, () => {
+			expect(signingStatus()).toEqual({ ready: false, problem: expect.stringMatching(/holds a public key/) });
+		});
+	});
+
+	it('reports a missing key id, which would sign tokens every site refuses', () => {
+		withEnv({ ED25519_KEY_ID: undefined }, () => {
+			expect(signingStatus()).toEqual({ ready: false, problem: expect.stringMatching(/ED25519_KEY_ID/) });
+		});
 	});
 });
