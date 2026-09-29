@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeChangelogHtml } from './sanitize.ts';
+import { sanitizeChangelogHtml, truncateChangelogHtml } from './sanitize.ts';
 
 /*
  * The changelog is rendered inside wp-admin on every licensed site, so a bypass
@@ -51,5 +51,55 @@ describe('sanitizeChangelogHtml', () => {
 	it('returns a string for malformed input rather than throwing', () => {
 		expect(typeof sanitizeChangelogHtml('<hello')).toBe('string');
 		expect(typeof sanitizeChangelogHtml('')).toBe('string');
+	});
+});
+
+describe('truncateChangelogHtml', () => {
+	const NOTE = '<p><em>Changelog shortened.</em></p>';
+
+	it('leaves a changelog that fits alone, apart from sanitising it', () => {
+		const html = '<ul><li>Fixed</li></ul>';
+		expect(truncateChangelogHtml(html, 100)).toBe(html);
+		expect(truncateChangelogHtml('<p>ok</p><script>alert(1)</script>', 100)).toBe('<p>ok</p>');
+	});
+
+	it('still sanitises what it cuts: an excerpt is new markup', () => {
+		const out = truncateChangelogHtml(`<p>${'x'.repeat(50)}</p><img src=x onerror=alert(1)>${'y'.repeat(100)}`, 120);
+		expect(out).not.toContain('onerror');
+		expect(out.endsWith(NOTE)).toBe(true);
+	});
+
+	it('never ends inside a tag', () => {
+		// Cut lands inside the `<a href="…` of the second item.
+		const html = '<ul><li>one</li><li><a href="https://example.test/very/long/path">two</a></li></ul>';
+		const out = truncateChangelogHtml(html, 40);
+		expect(out).not.toContain('href');
+		expect(out).not.toContain('&lt;');
+		expect(out).toBe(`<ul><li>one</li></ul>${NOTE}`);
+	});
+
+	it('never ends inside a character reference', () => {
+		// 11 characters ends at `<p>Tom &amp`, one short of the semicolon.
+		const out = truncateChangelogHtml('<p>Tom &amp; Jerry, and a great deal more text</p>', 11);
+		expect(out).not.toContain('&amp;am');
+		expect(out).toBe(`<p>Tom </p>${NOTE}`);
+	});
+
+	it('backs off to the last closed block when that keeps at least half the budget', () => {
+		const html = `<ul><li>${'a'.repeat(60)}</li><li>${'b'.repeat(60)}</li></ul>`;
+		const out = truncateChangelogHtml(html, 100);
+		expect(out).toBe(`<ul><li>${'a'.repeat(60)}</li></ul>${NOTE}`);
+	});
+
+	it('closes whatever the cut left open', () => {
+		const out = truncateChangelogHtml(`<ul><li><strong>${'z'.repeat(200)}</strong></li></ul>`, 50);
+		expect(out).toMatch(/^<ul><li><strong>z+<\/strong><\/li><\/ul>/);
+		expect(out.endsWith(NOTE)).toBe(true);
+	});
+
+	it('treats an excerpt that is exactly the budget as cut when the stored changelog was longer', () => {
+		const excerpt = `<p>${'k'.repeat(93)}</p>`; // 100 characters, cut in SQL from something longer
+		expect(truncateChangelogHtml(excerpt, 100, 5000).endsWith(NOTE)).toBe(true);
+		expect(truncateChangelogHtml(excerpt, 100, 100)).toBe(excerpt);
 	});
 });

@@ -25,6 +25,30 @@ export function str(body: unknown, field: string, { max = 2048 } = {}): string {
 	return value;
 }
 
+/*
+ * A release version as the releases table stores it: MAJOR.MINOR.PATCH with an
+ * optional prerelease and build, which is what semantic-release tags. No
+ * leading `v` (that is the tag; the webhook strips it), no leading zeros, and
+ * numeric parts short enough that nobody mistakes this for a free-text field.
+ */
+const VERSION_SHAPE =
+	/^(?:0|[1-9]\d{0,5})\.(?:0|[1-9]\d{0,5})\.(?:0|[1-9]\d{0,5})(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+/**
+ * A version the caller wants to act on — download it, not just report it.
+ *
+ * Stricter than `str`: this one is compared against stored versions and the
+ * answer decides which archive is handed out, so anything that is not a plain
+ * version is refused as a 400 before it reaches a query.
+ */
+export function versionStr(body: unknown, field: string, { max = 32 } = {}): string {
+	const value = str(body, field, { max });
+	if (!VERSION_SHAPE.test(value)) {
+		throw new InvalidField(field, `${field} must be a release version such as 5.2.0.`);
+	}
+	return value;
+}
+
 export function optionalStr(
 	body: unknown,
 	field: string,
