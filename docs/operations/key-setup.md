@@ -209,16 +209,36 @@ login fails while the same hash verifies fine from a Node CLI.
 
 Only the digest is stored; the plaintext password exists nowhere.
 
-**Session signer and cron bearer:**
+**Session signers and cron bearer:**
 
 ```bash
 echo "ADMIN_JWT_SECRET=$(openssl rand -hex 32)"
+echo "PORTAL_JWT_SECRET=$(openssl rand -hex 32)"
 echo "CRON_SECRET=$(openssl rand -hex 32)"
 ```
 
-`ADMIN_JWT_SECRET` must be at least 32 characters and is used as raw UTF-8
-HMAC bytes — it is not decoded from hex, so 64 hex characters is simply a
-64-byte key. Hex also guarantees no `$`.
+`ADMIN_JWT_SECRET` and `PORTAL_JWT_SECRET` must each be at least 32 characters
+and are used as raw UTF-8 HMAC bytes — not decoded from hex, so 64 hex
+characters is simply a 64-byte key. Hex also guarantees no `$`.
+
+The two session secrets **must differ**. Separate keys are what guarantee a
+customer's portal session can never be forged into an admin one; the same
+value in both would make that guarantee depend on every code path reading the
+`sub` claim correctly. Run the command twice rather than copying one value.
+
+`PORTAL_JWT_SECRET` is read with `required()`, so it fails loudly, with
+`Missing required environment variable: PORTAL_JWT_SECRET` in the function log.
+It shows up in two ways:
+
+- **Sign-in:** submitting a licence key returns 500, *after* the key has been
+  found and metered — so the key is not the problem. The first production
+  portal sign-ins, on 2026-09-28, failed exactly this way.
+- **Any `/portal` page load, for a browser holding an `stp_portal` cookie:**
+  `hooks.server.ts` verifies the cookie on every portal request, verifying
+  means signing, and signing reads the secret. The page 500s before it
+  renders, the sign-in form included. This is what a customer sees if the
+  secret is removed or renamed while sessions are live, and it looks nothing
+  like a sign-in failure.
 
 **Neon** — both URLs from the project's connection details: the pooled one for
 the running app, the direct/unpooled one for `drizzle-kit` and the mint CLI.
