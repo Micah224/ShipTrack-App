@@ -16,6 +16,29 @@ signing key is registered to that address, and any other committer email makes
 GitHub mark the commit "Unverified". GitHub credits the *author* field, so
 setting it is what makes the attribution real.
 
+## Branches
+
+Three branches, and only these three: `main`, `develop` and `feat/new-update`.
+
+- **`feat/new-update`** is where all work happens, including a session that has
+  been told to use some other branch. Open a PR from it into `develop` and
+  squash-merge it. The branch stays. Before the next change, bring it level
+  with `develop` using a merge, never a reset or force-push:
+  `git fetch origin develop && git merge origin/develop`. The squash commit
+  holds the same content, so the merge adds nothing and the next PR shows only
+  the new work.
+- **`develop`** receives squash merges from `feat/new-update` and Dependabot.
+- **`main`** receives only `develop` → `main` PRs, merged with a merge commit.
+  `backmerge.yml` then merges `main` back into `develop`, and
+  `branch-flow.yml` enforces the path.
+- **Delete any other branch** once its PR is merged or closed. That covers
+  Dependabot's branches, a hotfix, or one a tool created (`claude/*`). Never
+  leave work on one.
+- **Leave GitHub's "Automatically delete head branches" setting off.** Feature
+  PRs come from `feat/new-update`, so that setting would delete the reusable
+  branch after each merge. Remove other branches by hand from the repository's
+  Branches page.
+
 ## Stack
 
 SvelteKit 5 on Vercel (`ship-track-app`) · Neon Postgres 18 via Drizzle
@@ -72,6 +95,16 @@ write and truncate. Never point them at production.
   each `.func` to a temp dir — **without the copy, resolution walks up into the
   repo's `node_modules` and certifies a broken build** — and imports every chunk,
   not just the handler, since route modules load lazily.
+
+- **The server can look healthy while no site can activate.** The update
+  check signs nothing, so it keeps answering when `ED25519_PRIVATE_KEY` will
+  not load, while every activate and heartbeat fails. From 2026-09-24 to
+  2026-09-29 production held the key as the whole `.env` line, name and all
+  (the 2026-09-04 generator printed it that way under a "Vercel" heading), and
+  the liveness probe said `ready: true` throughout. `GET /api/v1/heartbeat` now
+  tries to load the key, answers 503 when it cannot, and otherwise reports the
+  `kid` and `public_key` it signs with. After any change to the key, compare
+  those with `TokenVerifier::PUBLIC_KEYS` in the plugin.
 
 - **Relative imports under `src/lib/server/` must carry the `.ts` extension.**
   Vite resolves extensionless specifiers; Node's ESM loader does not, and the
