@@ -16,6 +16,25 @@ signing key is registered to that address, and any other committer email makes
 GitHub mark the commit "Unverified". GitHub credits the *author* field, so
 setting it is what makes the attribution real.
 
+## Branches
+
+Three branches, and only these three: `main`, `develop` and `feat/new-update`.
+
+- **`feat/new-update`** is where all work happens, including a session that has
+  been told to use some other branch. Open a PR from it into `develop` and
+  squash-merge it. The branch stays. Before the next change, bring it level
+  with `develop` using a merge, never a reset or force-push:
+  `git fetch origin develop && git merge origin/develop`. The squash commit
+  holds the same content, so the merge adds nothing and the next PR shows only
+  the new work.
+- **`develop`** receives squash merges from `feat/new-update` and Dependabot.
+- **`main`** receives only `develop` → `main` PRs, merged with a merge commit.
+  `backmerge.yml` then merges `main` back into `develop`, and
+  `branch-flow.yml` enforces the path.
+- **Delete any other branch** once its PR is merged or closed. That covers
+  Dependabot's branches, a hotfix, or one a tool created (`claude/*`). Never
+  leave work on one.
+
 ## Stack
 
 SvelteKit 5 on Vercel (`ship-track-app`) · Neon Postgres 18 via Drizzle
