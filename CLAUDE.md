@@ -34,6 +34,9 @@ Three branches, and only these three: `main`, `develop` and `feat/new-update`.
 - **Delete any other branch** once its PR is merged or closed. That covers
   Dependabot's branches, a hotfix, or one a tool created (`claude/*`). Never
   leave work on one.
+- **Leave GitHub's "Automatically delete head branches" setting off.** Every PR
+  comes from `feat/new-update`, so that setting would delete the branch at each
+  merge. Remove other branches by hand from the repository's Branches page.
 
 ## Stack
 
