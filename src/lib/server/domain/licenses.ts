@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { getDb } from '../db/index.ts';
-import { auditLogs, licenses, type License } from '../db/schema.ts';
+import { auditLogs, licenses, type Activation, type License } from '../db/schema.ts';
 import { hashLicenseKey } from '../crypto/keys.ts';
 import { optionalNumber } from '../env.ts';
 
@@ -17,13 +17,56 @@ export interface LicenseRefusal {
 		// invalid_request because the plugin's remedy is different: re-activate,
 		// which re-checks the seat cap, rather than fix the request.
 		| 'domain_changed'
+		// The install holds no live seat: it never activated, or its seat was
+		// released (portal, deactivate, admin, or the reclaim sweep). Distinct
+		// from invalid_request because the plugin locks itself on this one, and
+		// must never lock over a request it merely got wrong.
+		| 'not_activated'
 		| 'invalid_request';
 	message: string;
 	status: number;
+	/** Extra machine-readable fields sent beside `code`. Never overrides ok, code or message. */
+	details?: Record<string, unknown>;
 }
 
-export function refusal(code: LicenseRefusal['code'], message: string, status = 403): LicenseRefusal {
-	return { code, message, status };
+export function refusal(
+	code: LicenseRefusal['code'],
+	message: string,
+	status = 403,
+	details?: Record<string, unknown>
+): LicenseRefusal {
+	return details ? { code, message, status, details } : { code, message, status };
+}
+
+/**
+ * The heartbeat's answer for an install with no live seat.
+ *
+ * A released row says when and why, and the plugin gets both: a seat freed on
+ * purpose (`self_service`, `admin`) is a decision to respect, while one the
+ * maintenance sweep reclaimed after `SEAT_RECLAIM_DAYS` of silence
+ * (`auto_reclaim`) is a site back from an outage that may simply re-activate —
+ * which re-checks the seat cap, so offering that costs nothing.
+ */
+export function notActivatedRefusal(
+	activation?: Pick<Activation, 'releasedAt' | 'releaseReason'>
+): LicenseRefusal {
+	if (!activation?.releasedAt) {
+		return refusal(
+			'not_activated',
+			'This install is not activated. Call /api/v1/activate first.',
+			409,
+			{ released_at: null, release_reason: null }
+		);
+	}
+	return refusal(
+		'not_activated',
+		"This install's seat was released. Activate the licence on this site again to use it.",
+		409,
+		{
+			released_at: activation.releasedAt.toISOString(),
+			release_reason: activation.releaseReason?.toLowerCase() ?? null
+		}
+	);
 }
 
 export async function findLicenseByKey(key: string): Promise<License | undefined> {

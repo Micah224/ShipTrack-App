@@ -218,6 +218,24 @@ replayable for as long as the transfer took.
 The 302 to a presigned R2 URL is what keeps the archive off the function
 entirely: Cloudflare serves the bytes, at no egress cost and no CPU here.
 
+Rollback is two more calls on the same footing. `updates/versions` lists at
+most ten downloadable releases, newest version first, read from the same
+window and predicate as the update check so the entry it marks `latest` is the
+one `updates/check` offers; each changelog is cut to an excerpt in SQL and
+sanitised again on the way out, since an excerpt is new markup. `updates/package`
+takes an exact version and returns a link issued by the same
+`issueDownloadToken` the update check uses — same TTL, same single-use
+`download_tokens` row — so a rollback link is no longer-lived or more
+replayable than an update. "Downloadable" is defined once, in
+`domain/releases.ts`: the table has no yank flag, so today it means a row that
+names a non-empty archive.
+
+A heartbeat from an install with no live seat answers `not_activated` (409),
+not `invalid_request`. The plugin locks itself on it, and must never lock over
+a request it merely got wrong. The body names `release_reason`, because a seat
+the reclaim sweep took from a site that was offline is not the same event as
+one its owner freed.
+
 ## 8. Configuration
 
 `src/lib/server/env.ts` reads `process.env` rather than `$env/dynamic/private`.

@@ -8,7 +8,7 @@ export function fail(refusalOrCode: LicenseRefusal | string, message?: string, s
 		return json({ ok: false, code: refusalOrCode, message: message ?? refusalOrCode }, { status });
 	}
 	return json(
-		{ ok: false, code: refusalOrCode.code, message: refusalOrCode.message },
+		{ ...refusalOrCode.details, ok: false, code: refusalOrCode.code, message: refusalOrCode.message },
 		{ status: refusalOrCode.status }
 	);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { licenseState, stateRefusal } from './licenses.ts';
+import { licenseState, notActivatedRefusal, stateRefusal } from './licenses.ts';
 import type { License } from '../db/schema.ts';
 
 function license(overrides: Partial<License> = {}): License {
@@ -70,5 +70,36 @@ describe('stateRefusal', () => {
 		expect(stateRefusal('REVOKED')?.code).toBe('license_revoked');
 		expect(stateRefusal('SUSPENDED')?.code).toBe('license_suspended');
 		expect(stateRefusal('EXPIRED')?.code).toBe('license_expired');
+	});
+});
+
+describe('notActivatedRefusal', () => {
+	it('is a 409 not_activated for an install that never activated', () => {
+		expect(notActivatedRefusal(undefined)).toEqual({
+			code: 'not_activated',
+			message: 'This install is not activated. Call /api/v1/activate first.',
+			status: 409,
+			details: { released_at: null, release_reason: null }
+		});
+	});
+
+	it('says when and why a released seat went, so the plugin can tell a reclaim from a decision', () => {
+		const refused = notActivatedRefusal({
+			releasedAt: new Date('2026-09-28T10:00:00Z'),
+			releaseReason: 'AUTO_RECLAIM'
+		});
+		expect(refused.code).toBe('not_activated');
+		expect(refused.status).toBe(409);
+		expect(refused.message).toMatch(/seat was released/);
+		expect(refused.details).toEqual({
+			released_at: '2026-09-28T10:00:00.000Z',
+			release_reason: 'auto_reclaim'
+		});
+	});
+
+	it('is never invalid_request, which the plugin must not lock on', () => {
+		expect(notActivatedRefusal({ releasedAt: new Date(), releaseReason: null }).code).not.toBe(
+			'invalid_request'
+		);
 	});
 });

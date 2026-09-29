@@ -5,7 +5,13 @@ import { getDb } from '$lib/server/db';
 import { activations } from '$lib/server/db/schema';
 import { signingStatus } from '$lib/server/crypto/ed25519';
 import { buildEntitlement } from '$lib/server/domain/entitlement';
-import { findLicenseByKey, licenseState, refusal, stateRefusal } from '$lib/server/domain/licenses';
+import {
+	findLicenseByKey,
+	licenseState,
+	notActivatedRefusal,
+	refusal,
+	stateRefusal
+} from '$lib/server/domain/licenses';
 import { countSeats, findActivation } from '$lib/server/domain/seats';
 import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
@@ -77,9 +83,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const activation = await findActivation(license.id, installId);
 	if (!activation || activation.releasedAt) {
-		return fail(
-			refusal('invalid_request', 'This install is not activated. Call /api/v1/activate first.', 409)
-		);
+		// `not_activated`, never `invalid_request`: the plugin locks on this code,
+		// so a malformed request must not be able to produce it.
+		return fail(notActivatedRefusal(activation));
 	}
 
 	const site = classifySite(siteUrl);

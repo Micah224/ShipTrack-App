@@ -1,15 +1,12 @@
 import type { RequestHandler } from './$types';
-import { getDb } from '$lib/server/db';
-import { downloadTokens } from '$lib/server/db/schema';
-import { generateDownloadToken } from '$lib/server/crypto/keys';
-import { optionalNumber, required } from '$lib/server/env';
+import { required } from '$lib/server/env';
 import {
 	findLicenseByKey,
 	licenseState,
 	refusal,
 	stateRefusal
 } from '$lib/server/domain/licenses';
-import { isNewer, latestRelease } from '$lib/server/domain/releases';
+import { downloadUrl, isNewer, issueDownloadToken, latestRelease } from '$lib/server/domain/releases';
 import { meterLicense, meterMiss } from '$lib/server/domain/limits';
 import { classifySite } from '$lib/server/domain/site';
 import { fail, ok, readJson, limited, rateLimitHeaders } from '$lib/server/http';
@@ -77,16 +74,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		return fail(refusal('invalid_request', 'site_url did not contain a usable host.', 400));
 	}
 
-	const { token, hash } = generateDownloadToken();
-	const ttlMinutes = optionalNumber('DOWNLOAD_TOKEN_TTL_MINUTES', 15);
-
-	const db = getDb();
-	await db.insert(downloadTokens).values({
-		tokenHash: hash,
+	const { token } = await issueDownloadToken({
 		licenseId: license.id,
 		releaseId: release.id,
-		domain: site.domain,
-		expiresAt: new Date(Date.now() + ttlMinutes * 60_000)
+		domain: site.domain
 	});
 
 	const base = publicBase();
@@ -96,7 +87,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		new_version: release.version,
 		slug: 'shiptrack-pro',
 		plugin: 'shiptrack-pro/shiptrack-pro.php',
-		package: `${base}/api/v1/updates/download/${token}`,
+		package: downloadUrl(token),
 		tested: release.testedUpTo,
 		requires_php: release.minPhp,
 		requires: release.minWp,

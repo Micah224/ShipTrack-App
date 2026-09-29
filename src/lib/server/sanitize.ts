@@ -43,3 +43,43 @@ const OPTIONS: sanitizeHtml.IOptions = {
 export function sanitizeChangelogHtml(html: string): string {
 	return sanitizeHtml(html, OPTIONS);
 }
+
+const SHORTENED_NOTE = '<p><em>Changelog shortened.</em></p>';
+
+/* The closing tags a cut may end on without leaving a half-finished block. */
+const BLOCK_END = /<\/(?:p|li|ul|ol|h[1-6]|pre|blockquote|table)\s*>/gi;
+
+/**
+ * A changelog cut to at most `max` characters of input, still well-formed and
+ * still sanitised, with a note saying it was cut.
+ *
+ * `fullLength` is the length of the whole stored changelog, for when `html` is
+ * already an excerpt (the rollback list cuts in SQL): an excerpt exactly `max`
+ * long is only complete if nothing followed it.
+ *
+ * Cutting HTML by length alone ends mid-tag (`<a href="https://…`) or
+ * mid-reference (`&am`), so the cut backs off to before either, drops opening
+ * tags left with no content, then backs off to the last closed block if that
+ * keeps at least half the budget. What is left open — `<ul><li>` — is closed
+ * by the sanitiser, which is why the result always goes through it: an
+ * excerpt is new markup, and it is shown in wp-admin.
+ */
+export function truncateChangelogHtml(html: string, max: number, fullLength = html.length): string {
+	if (html.length <= max && fullLength <= max) return sanitizeChangelogHtml(html);
+
+	let cut = html.slice(0, max);
+
+	const open = cut.lastIndexOf('<');
+	if (open > cut.lastIndexOf('>')) cut = cut.slice(0, open);
+
+	cut = cut.replace(/&#?[a-z0-9]*$/i, '');
+
+	// Opening tags with nothing after them would only survive as empty elements.
+	cut = cut.replace(/(?:<[a-z][a-z0-9]*(?:\s[^<>]*)?>\s*)+$/i, '');
+
+	let blockEnd = -1;
+	for (const match of cut.matchAll(BLOCK_END)) blockEnd = match.index + match[0].length;
+	if (blockEnd >= max / 2) cut = cut.slice(0, blockEnd);
+
+	return sanitizeChangelogHtml(cut) + SHORTENED_NOTE;
+}
