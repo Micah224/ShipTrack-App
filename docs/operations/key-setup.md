@@ -226,11 +226,19 @@ customer's portal session can never be forged into an admin one; the same
 value in both would make that guarantee depend on every code path reading the
 `sub` claim correctly. Run the command twice rather than copying one value.
 
-`PORTAL_JWT_SECRET` is read with `required()`, so it fails loudly: unset, every
-portal sign-in returns 500 with `Missing required environment variable:
-PORTAL_JWT_SECRET` in the function log, after the key has already been
-accepted. The first production portal sign-ins, on 2026-09-28, failed exactly
-this way.
+`PORTAL_JWT_SECRET` is read with `required()`, so it fails loudly, with
+`Missing required environment variable: PORTAL_JWT_SECRET` in the function log.
+It shows up in two ways:
+
+- **Sign-in:** submitting a licence key returns 500, *after* the key has been
+  found and metered — so the key is not the problem. The first production
+  portal sign-ins, on 2026-09-28, failed exactly this way.
+- **Any `/portal` page load, for a browser holding an `stp_portal` cookie:**
+  `hooks.server.ts` verifies the cookie on every portal request, verifying
+  means signing, and signing reads the secret. The page 500s before it
+  renders, the sign-in form included. This is what a customer sees if the
+  secret is removed or renamed while sessions are live, and it looks nothing
+  like a sign-in failure.
 
 **Neon** — both URLs from the project's connection details: the pooled one for
 the running app, the direct/unpooled one for `drizzle-kit` and the mint CLI.
