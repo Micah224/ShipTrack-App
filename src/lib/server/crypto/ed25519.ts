@@ -59,15 +59,22 @@ export function normalisePem(raw: string): string {
 	if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
 		value = value.slice(1, -1);
 	}
-	value = value.replace(/\\r/g, '').replace(/\\n/g, '\n');
+	value = value.replace(/\\r/g, '').replace(/\\n/g, '\n').trim();
 
-	const armour = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/.exec(value);
+	/*
+	 * Exactly one PKCS#8 block and nothing else. Picking the first of two keys
+	 * pasted together during a rotation would sign with one key while
+	 * ED25519_KEY_ID names the other, and every site would refuse the token.
+	 */
+	const armour = /^-----BEGIN PRIVATE KEY-----([A-Za-z0-9+/=\s]+)-----END PRIVATE KEY-----$/.exec(value);
 	if (!armour) {
 		// Never echo the value: this message reaches logs.
-		throw new Error('ED25519_PRIVATE_KEY is not a PEM key: no BEGIN/END lines were found.');
+		throw new Error(
+			'ED25519_PRIVATE_KEY must hold exactly one PEM block, from BEGIN PRIVATE KEY to END PRIVATE KEY.'
+		);
 	}
-	const body = armour[2].replace(/\s+/g, '').match(/.{1,64}/g) ?? [];
-	return `-----BEGIN ${armour[1]}-----\n${body.join('\n')}\n-----END ${armour[1]}-----\n`;
+	const body = armour[1].replace(/\s+/g, '').match(/.{1,64}/g) ?? [];
+	return `-----BEGIN PRIVATE KEY-----\n${body.join('\n')}\n-----END PRIVATE KEY-----\n`;
 }
 
 /**

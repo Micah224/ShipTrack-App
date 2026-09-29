@@ -148,7 +148,20 @@ describe('normalisePem', () => {
 
 	it('refuses a value with no PEM armour, without echoing it', () => {
 		const secret = 'MC4CAQAwBQYDK2VwBCIEIKnotarealkeyatallbutshaped==';
-		expect(() => normalisePem(secret)).toThrow(/no BEGIN\/END lines/);
+		expect(() => normalisePem(secret)).toThrow(/exactly one PEM block/);
 		expect(() => normalisePem(secret)).not.toThrow(new RegExp(secret.slice(0, 12)));
+	});
+
+	it('refuses two keys pasted together rather than signing with the first', () => {
+		const next = crypto
+			.generateKeyPairSync('ed25519')
+			.privateKey.export({ type: 'pkcs8', format: 'pem' })
+			.toString();
+		expect(() => normalisePem(privatePem + next)).toThrow(/exactly one PEM block/);
+	});
+
+	it('refuses anything outside the block', () => {
+		expect(() => normalisePem(`${privatePem}trailing`)).toThrow(/exactly one PEM block/);
+		expect(() => normalisePem(`KEY=${privatePem}`)).toThrow(/exactly one PEM block/);
 	});
 });
